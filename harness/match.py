@@ -29,7 +29,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from bots.base import Bot, Budget, build_bot
+from bots.base import Bot, Budget, SearchResult, build_bot
 from engine import rules
 from engine.board import Board
 from engine.types import Color, Move, Result
@@ -183,24 +183,46 @@ def play_moves(
             return result
 
         bot = red_bot if board.side_to_move is Color.RED else black_bot
+        play_bot_move(board, bot, budget, record, legal)
 
-        started = time.perf_counter()
-        search = bot.choose_move(board, budget)
-        elapsed_ms = (time.perf_counter() - started) * 1000.0
-        move = _resolve_move(legal, search.move, bot)
 
-        # Default record_check=True: the perpetual-check rule needs the check flag
-        # of every ply, so the game loop must never use the search's shortcut.
-        board.make_move(move)
-        record.moves.append(
-            MoveRecord(
-                move=move.to_iccs(),
-                time_ms=elapsed_ms,
-                nodes=search.nodes,
-                depth=search.depth,
-                eval=search.score,
-            )
+def play_bot_move(
+    board: Board,
+    bot: Bot,
+    budget: Budget,
+    record: GameRecord,
+    legal: list[Move] | None = None,
+) -> SearchResult:
+    """Ask ``bot`` for one move, validate it, play it, and record it.
+
+    This is the single-step half of :func:`play_moves`, shared with the live-play
+    server so both use the same code path: the same validation of what the bot
+    returned, and the same ``board.make_move(move)`` call with the default
+    ``record_check=True`` that the perpetual-check rule depends on.
+
+    ``legal`` may be passed when the caller already generated the legal moves.
+    """
+    if legal is None:
+        legal = board.legal_moves()
+    if not legal:
+        raise ValueError("no legal moves: the game is already over")
+
+    started = time.perf_counter()
+    search = bot.choose_move(board, budget)
+    elapsed_ms = (time.perf_counter() - started) * 1000.0
+    move = _resolve_move(legal, search.move, bot)
+
+    board.make_move(move)
+    record.moves.append(
+        MoveRecord(
+            move=move.to_iccs(),
+            time_ms=elapsed_ms,
+            nodes=search.nodes,
+            depth=search.depth,
+            eval=search.score,
         )
+    )
+    return search
 
 
 def play_random_opening(board: Board, plies: int, seed: int) -> list[str]:

@@ -4,9 +4,8 @@ A Xiangqi (Chinese Chess) engine, several search bots, a match harness, an
 experiment suite, and a local web app for human-vs-bot and bot-vs-bot play with
 replay.
 
-**Status: M1 (engine core), M2 (baselines and match harness), M3 (alpha-beta), M4
-(evaluation), M5 (plain MCTS), M6 (experiments) and M7 (replay viewer) complete.**
-M8 (live play server and web UI) is described in `AGENTS.md`.
+**Status: M1-M7 complete, and M8 part 1 (the live-play server) done.** M8 part 2 (the
+play UI) is the remaining work.
 
 ## Quick start
 
@@ -71,6 +70,11 @@ web/               # static replay viewer (opens from file:// or any static serv
   replay.js        # viewer screen: controls, move list, loaders
   style.css
   tests/           # node web/tests/replay-core.test.js
+server/            # live-play API (M8)
+  app.py           # FastAPI app: /api routes, /docs, static / and /games
+  registry.py      # bot types, parameter schemas, validation, factory
+  games.py         # in-memory game store, per-game lock, autosave, clamps
+  __main__.py      # python -m server
 tests/             # pytest suite, including the fixed position sets
   positions_middlegame.txt
   positions_transpositions.txt
@@ -563,6 +567,78 @@ stalemates (also a win), 2 move-cap draws. Reproduce with
 random (a 300-ply cap draw), and an 8-ply perpetual check. Regenerate them with
 `python -m tools.make_samples`.
 
+## Server (M8, part 1: live play API)
+
+`python -m server` starts a local, single-user server for human-vs-bot and
+bot-vs-bot games. It is a thin layer over the engine, the bots, and the harness: no
+rules or search code lives in `server/`.
+
+**Install** (this project's Windows virtualenv):
+
+```powershell
+.\venv\Scripts\python.exe -m pip install -e ".[server,dev]"
+```
+
+That adds `fastapi`, `uvicorn`, and `httpx` (the test client). Start it from the
+project root so `games/` and `web/` resolve:
+
+```powershell
+.\venv\Scripts\python.exe -m server
+```
+
+* API: `http://127.0.0.1:8000/api/...`
+* Interactive API docs (try the endpoints by hand): `http://127.0.0.1:8000/docs`
+* Replay viewer (M7): `http://127.0.0.1:8000/` and the openapi schema at `/openapi.json`
+
+Bound to `127.0.0.1` only; no reload, no CORS, no authentication. The game store is
+in memory (200 games, finished ones evicted first). A finished game is written once
+to `games/<id>.json` and is also served at `/games/<id>.json`, so the viewer can open
+it with `?game=games/<id>.json`.
+
+### Endpoints
+
+| method and path | what it does |
+|---|---|
+| `GET /api/bots` | bot types with parameter schemas, ranges, choices and defaults |
+| `GET /api/games` | games in memory, newest first |
+| `POST /api/games` | `{red, black, seed?, opening_plies?, start_fen?}`; creates the game and applies the seeded random opening |
+| `GET /api/games/{id}` | current state (`fen`, `side_to_move`, `players`, `legal_moves`, `in_check`, `last_move`, `moves`, `result`, `reason`, `plies`) |
+| `POST /api/games/{id}/move` | `{move: "h2e2"}`; human moves only, validated against the legal moves |
+| `POST /api/games/{id}/step` | the bot on the side to move plays one move; the response adds a `search` object (depth, nodes, iterations for MCTS, requested vs applied time) |
+| `POST /api/games/{id}/undo` | undo the last human move and the bot reply (or the last ply), clearing a result |
+| `POST /api/games/{id}/resign` | `{color: "red"}`; the other side wins with reason `resign` |
+| `GET /api/games/{id}/export` | the Game JSON schema, including `red`/`black` as player-spec objects |
+
+Reasons reported are `checkmate`, `stalemate`, `repetition`, `perpetual_check`,
+`move_cap` and `resign`. Every bot call is capped at `SERVER_MAX_MOVE_MS` (10 s,
+`server/games.py`): the request's own limit is clamped, and the applied value is
+reported in `search.applied_time_limit_ms` while `search.requested_time_limit_ms`
+shows what was asked for.
+
+### PowerShell example: bot vs bot
+
+```powershell
+$body = @{
+  red   = @{ type = "alphabeta"; params = @{ depth = 3; evaluator = "full" } }
+  black = @{ type = "mcts"; params = @{ iterations = 800 } }
+  seed  = 7
+} | ConvertTo-Json -Depth 6
+
+$game = Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/games `
+  -Body $body -ContentType "application/json"
+$game.id
+
+# one bot move, with what the search actually used
+Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8000/api/games/$($game.id)/step"
+
+# the finished (or current) game, ready for the replay viewer
+Invoke-RestMethod "http://127.0.0.1:8000/api/games/$($game.id)/export" |
+  ConvertTo-Json -Depth 8
+```
+
+Open `/docs` to do the same by clicking: `POST /api/games` with the body above,
+then `POST /api/games/{id}/step`, `.../undo`, `.../export`, and so on.
+
 ## Replay viewer (M7)
 
 `web/index.html` is the replay screen: it loads a saved Game JSON and steps through
@@ -644,6 +720,6 @@ become a cannon's screen), which is what took depth 4 from 23 s in M1 to 5 s.
 - ~~M5 plain MCTS~~ (done)
 - ~~M6 experiments (depth scaling, heuristic comparison)~~ (done)
 - ~~M7 replay viewer~~ (done)
-- M8 live play server and web UI
+- M8 live play server and web UI — server done, play UI next
 
 AlphaZero-style neural MCTS is explicitly future work and has no code here.
