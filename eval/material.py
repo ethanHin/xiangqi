@@ -40,6 +40,26 @@ CROSSED_SOLDIER_VALUE = 200
 RED_RIVER_RANK = 5
 BLACK_RIVER_RANK = 4
 
+# How many of each piece one side starts with. Used to bound the largest material
+# total one side can hold, which is what keeps the evaluation far below the mate
+# score (see eval/evaluator.py).
+ARMY_COUNTS: dict[PieceKind, int] = {
+    PieceKind.GENERAL: 1,
+    PieceKind.ADVISOR: 2,
+    PieceKind.ELEPHANT: 2,
+    PieceKind.HORSE: 2,
+    PieceKind.CHARIOT: 2,
+    PieceKind.CANNON: 2,
+    PieceKind.SOLDIER: 5,
+}
+
+# The most material one side can have: every piece alive and every soldier across
+# the river. 2*900 + 2*450 + 2*400 + 2*200 + 2*200 + 5*200 = 5,300 centipawns.
+MAX_ARMY_VALUE = sum(
+    count * (CROSSED_SOLDIER_VALUE if kind is PieceKind.SOLDIER else PIECE_VALUES[kind])
+    for kind, count in ARMY_COUNTS.items()
+)
+
 # Piece codes are 0 (empty), 1..7 (Red) and 9..15 (Black); see engine.types.
 _PIECE_CODE_COUNT = 16
 

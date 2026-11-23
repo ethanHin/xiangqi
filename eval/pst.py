@@ -16,8 +16,13 @@ What the tables encode (they are flat constants, so the comments matter):
   central files;
 * horse: central squares are worth more than rim squares, because the horse has
   more destinations there;
-* chariot: central files and the second/far ranks are worth a little more. A true
-  "open file" bonus needs to look at the position and is not possible in a PST;
+* chariot: central files and the advanced ranks are worth a little more. A piece-
+  square table cannot see whether a file is **open** -- that depends on the other
+  pieces, not on the square -- so the central-file preference is the proxy: central
+  files are the ones that open first as the game develops, while the rim files are
+  usually still blocked by horses and elephants. A true open-file bonus would need a
+  separate term that inspects file occupancy; M4 deliberately does not have one,
+  because the proposal lists only material, PSTs, mobility and king safety;
 * cannon: small central bonus, mild preference for staying on its own side;
 * advisor / elephant: small bonuses on the palace and home squares they defend;
 * general: prefers the back rank; sitting on the palace's forward rank is a small
@@ -71,7 +76,9 @@ RED_TABLES: dict[PieceKind, tuple[tuple[int, ...], ...]] = {
         (-3, 0, 3, 6, 7, 6, 3, 0, -3),
         (-6, -3, 0, 3, 4, 3, 0, -3, -6),
     ),
-    # Chariots: central files and the advanced ranks are worth a little more.
+    # Chariots: central files and the advanced ranks are worth a little more. This
+    # is a static proxy for "open files" -- the table cannot know which files are
+    # actually open, but central files are the ones that open first.
     PieceKind.CHARIOT: (
         (0, 2, 4, 6, 8, 6, 4, 2, 0),
         (2, 4, 6, 8, 10, 8, 6, 4, 2),

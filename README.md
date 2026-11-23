@@ -230,46 +230,206 @@ Four features, each in its own module, each returning centipawns **for the side 
 move** (negamax-compatible), combined by `eval/evaluator.py` with configurable
 weights:
 
-| feature | module | what it measures |
-|---|---|---|
-| material | `eval/material.py` | piece values; a soldier is worth 200 instead of 100 once it crosses the river |
-| pst | `eval/pst.py` | where each piece stands: soldiers advance, horses centralise, chariots take central files, advisors/elephants stay home, the general stays back |
-| mobility | `eval/mobility.py` | pseudo-legal move difference (own minus opponent) |
-| king safety | `eval/king_safety.py` | advisors and elephants near the general, penalties for a bare or forward general |
+| feature | module | units of its weight | what it measures |
+|---|---|---|---|
+| material | `eval/material.py` | centipawns (weight 1 = use the value as is) | piece values; a soldier is worth 200 instead of 100 once it crosses the river |
+| pst | `eval/pst.py` | centipawns per table value | where each piece stands: soldiers advance, horses centralise, chariots take central files, advisors/elephants stay home, the general stays back |
+| mobility | `eval/mobility.py` | centipawns per extra pseudo-legal move (default 2) | pseudo-legal move difference, own minus opponent |
+| king safety | `eval/king_safety.py` | centipawns per safety point | advisors and elephants near the general, penalties for a bare or forward general |
+
+`DEFAULT_WEIGHTS = {"material": 1, "pst": 1, "mobility": 2, "king_safety": 1}`, and
+the weights are a config dict, so an experiment can override them (`make_evaluator(...,
+weights=...)`). `TEMPO_BONUS` is a named constant and is 0, because the start position
+must evaluate to exactly 0.
+
+`evaluate_from_red(board, evaluator)` gives the absolute view: the side-to-move score,
+negated when Black is to move, so the same placement always reports the same number
+and a position good for Red is positive whoever is to move.
+
+Two bounds keep positional terms in their place:
+
+* each positional contribution is **clamped after weighting** to a budget: PST 150,
+  mobility 200, king safety 150 centipawns. The three together can never exceed 500,
+  which is less than a chariot (900), so no combination of positional terms can
+  outweigh winning a chariot -- by construction, not by luck;
+* the largest possible evaluation (a full army with every soldier across the river,
+  5,300, plus the 500 positional budget = 5,800) plus the 300-ply mate-distance
+  adjustment is 6,100, far below `MATE_SCORE` (100,000), so a forced mate always
+  outranks any heuristic score. `tests/test_eval.py` checks both inequalities and
+  prints the numbers if they ever fail.
+
+The clamps are a safety bound rather than a tuning knob: they fired on **0% of
+positions** in the 60-position middlegame set and the sparse endgame and quiet sets
+(`python -m tools.clamp_stats`).
 
 Black's piece-square tables are Red's tables **flipped by rank** (`r -> 9-r`), which
 is also the project's definition of "mirrored". The named evaluators add one feature
 at a time, matching the M6 comparison: `material`, `material_pst`,
-`material_pst_mobility`, `full`. `TEMPO_BONUS` exists as a named constant and is 0,
-because the acceptance rule requires the start position to evaluate to exactly 0.
+`material_pst_mobility`, `full`.
 
 Acceptance properties, tested over real middlegame positions rather than hand-picked
-ones:
+ones, for all four evaluators:
 
 * the same position from Red's view and from Black's view gives exact negatives;
 * a mirrored + colour-swapped position with the side to move swapped scores
   identically;
-* the start position scores 0 for every evaluator.
+* the start position scores 0, from the side to move and from Red's absolute view.
+
+### Piece-square tables
+
+Values are centipawns, columns are files a-i, ranks are printed from 9 (Black's back
+rank) down to 0 (Red's back rank). Black uses the same table flipped by rank. The
+values were set once by reasoning and have not been tuned by playing evaluators
+against each other.
+
+**Soldiers** -- no bonus at home, then rising with every step, with an extra jump when
+the river is crossed (rank 5) and a peak in the centre of the enemy palace:
+
+```
+rank 9   26   36   50   66   78   66   50   36   26
+rank 8   22   30   42   56   66   56   42   30   22
+rank 7   18   24   32   44   52   44   32   24   18
+rank 6   14   18   24   32   38   32   24   18   14
+rank 5   10   12   16   22   26   22   16   12   10
+rank 4    5    5    8   12   15   12    8    5    5
+rank 3    0    0    0    0    0    0    0    0    0
+rank 2    0    0    0    0    0    0    0    0    0
+rank 1    0    0    0    0    0    0    0    0    0
+rank 0    0    0    0    0    0    0    0    0    0
+```
+
+**Horses** -- centralisation: the centre gives more destinations and fewer blocked
+legs, so rim squares are negative:
+
+```
+rank 9   -6   -3    0    3    4    3    0   -3   -6
+rank 8   -3    0    3    6    7    6    3    0   -3
+rank 7    0    3    6    9   10    9    6    3    0
+rank 6    1    4    7   10   11   10    7    4    1
+rank 5    2    5    8   11   12   11    8    5    2
+rank 4    2    5    8   11   12   11    8    5    2
+rank 3    1    4    7   10   11   10    7    4    1
+rank 2    0    3    6    9   10    9    6    3    0
+rank 1   -3    0    3    6    7    6    3    0   -3
+rank 0   -6   -3    0    3    4    3    0   -3   -6
+```
+
+**Chariots** -- central files and advanced ranks. A piece-square table cannot see
+whether a **file is open**; that depends on the other pieces, not on the square. The
+central-file preference is the static proxy, because central files are the ones that
+open first, while the rim files usually stay blocked by horses and elephants. A true
+open-file term would need a separate occupancy feature, which the proposal does not
+include:
+
+```
+rank 9    0    2    4    6    8    6    4    2    0
+rank 8    2    4    6    8   10    8    6    4    2
+rank 7    2    4    6    8   10    8    6    4    2
+rank 6    2    4    6    8   10    8    6    4    2
+rank 5    2    4    6    8   10    8    6    4    2
+rank 4    2    4    6    8   10    8    6    4    2
+rank 3    2    4    6    8   10    8    6    4    2
+rank 2    2    4    6    8   10    8    6    4    2
+rank 1    2    4    6    8   10    8    6    4    2
+rank 0    0    2    4    6    8    6    4    2    0
+```
+
+**Cannons** -- the centre file early, when the cannon has screens to work with, and a
+mild preference for staying on its own half:
+
+```
+rank 9    0    0    0    0    0    0    0    0    0
+rank 8    0    0    0    2    2    2    0    0    0
+rank 7    0    0    2    4    4    4    2    0    0
+rank 6    0    2    4    6    6    6    4    2    0
+rank 5    0    2    4    6    8    6    4    2    0
+rank 4    0    2    4    6    8    6    4    2    0
+rank 3    0    2    4    6    8    6    4    2    0
+rank 2    0    2    4    6    8    6    4    2    0
+rank 1    0    2    4    6    6    6    4    2    0
+rank 0    0    0    2    4    4    4    2    0    0
+```
+
+**Advisors** -- palace points, with the centre point worth most:
+
+```
+rank 9    0    0    0    0    0    0    0    0    0
+rank 8    0    0    0    0    0    0    0    0    0
+rank 7    0    0    0    0    0    0    0    0    0
+rank 6    0    0    0    0    0    0    0    0    0
+rank 5    0    0    0    0    0    0    0    0    0
+rank 4    0    0    0    0    0    0    0    0    0
+rank 3    0    0    0    0    0    0    0    0    0
+rank 2    0    0    0    3    0    3    0    0    0
+rank 1    0    0    0    0   10    0    0    0    0
+rank 0    0    0    0    5    0    5    0    0    0
+```
+
+**Elephants** -- home points and the centre of one's own half:
+
+```
+rank 9    0    0    0    0    0    0    0    0    0
+rank 8    0    0    0    0    0    0    0    0    0
+rank 7    0    0    0    0    0    0    0    0    0
+rank 6    0    0    0    0    0    0    0    0    0
+rank 5    0    0    0    0    0    0    0    0    0
+rank 4    0    0    5    0    0    0    5    0    0
+rank 3    0    0    0    0    0    0    0    0    0
+rank 2    3    0    0    0   10    0    0    0    3
+rank 1    0    0    0    0    0    0    0    0    0
+rank 0    0    0    5    0    0    0    5    0    0
+```
+
+**General** -- the back rank is home, and the palace's forward rank is a small
+penalty:
+
+```
+rank 9    0    0    0    0    0    0    0    0    0
+rank 8    0    0    0    0    0    0    0    0    0
+rank 7    0    0    0    0    0    0    0    0    0
+rank 6    0    0    0    0    0    0    0    0    0
+rank 5    0    0    0    0    0    0    0    0    0
+rank 4    0    0    0    0    0    0    0    0    0
+rank 3    0    0    0    0    0    0    0    0    0
+rank 2    0    0    0   -8  -12   -8    0    0    0
+rank 1    0    0    0    0    4    0    0    0    0
+rank 0    0    0    0    5    8    5    0    0    0
+```
 
 ### What the evaluators cost
 
-`python -m tools.eval_cost` measures the features and the search at fixed depth 3 on
-five middlegame positions:
+`python -m tools.eval_cost --limit 60 --depth 3` on the M3 middlegame set (60
+positions, fixed depth 3):
 
-| evaluator | us per eval | nodes/s | ms per move at depth 3 |
-|---|---|---|---|
-| material | 2.35 | 16,782 | 87.7 |
-| material_pst | 4.10 | 15,915 | 94.3 |
-| material_pst_mobility | 42.72 | 9,335 | 161.4 |
-| full | 61.05 | 7,948 | 189.6 |
+| evaluator | us per eval | search nodes | nodes/s | ms per move |
+|---|---|---|---|---|
+| material | 2.31 | 101,720 | 15,366 | 110.3 |
+| material_pst | 4.20 | 107,309 | 14,753 | 121.2 |
+| material_pst_mobility | 43.38 | 108,625 | 9,407 | 192.4 |
+| full | 62.29 | 107,735 | 8,113 | 221.3 |
 
-Mobility dominates the cost (about 38 us per call: it counts pseudo-legal moves for
-both sides), so `full` is roughly twice as slow per move as material at the same
-depth. Whether the extra features are *worth* that has not been established: the
-10-game smoke matches are too small to rank evaluators, and they disagreed with each
-other (PST beat material 7-2, `full` beat material 6-4, but PST beat `full` 6-3).
-Recorded as inconclusive in `docs/experiment_log.md`; M6 is where this gets a real
-sample.
+Mobility dominates the cost (about 39 us per call: it counts pseudo-legal moves for
+both sides), so `full` is about twice as slow per move as material at the same depth.
+The node counts differ a little because a different evaluation changes which lines
+are pruned, not how deep the search goes.
+
+### Sanity smoke check (not a ranking)
+
+Fixed depth 2, 10 games each against `material` (5 games per colour), seed 1, 6-ply
+openings, 8 workers. This is a wiring check, not a comparison:
+
+| richer evaluator | W | D | L | win rate |
+|---|---|---|---|---|
+| material_pst | 5 | 2 | 3 | 50% |
+| material_pst_mobility | 8 | 2 | 0 | 80% |
+| full | 9 | 1 | 0 | 90% |
+
+**Ten games is far too noisy to rank evaluators**: the 95% confidence interval for
+5/10 spans roughly 20-80%. The only conclusions are that the names are wired
+correctly, that no richer evaluator loses badly, and that material alone is a weak
+opponent at depth 2. M6 runs the real comparison with a proper sample. The full log,
+including the earlier depth-3 exploratory matches (which disagreed with each other),
+is in `docs/experiment_log.md`.
 
 ## Tournament harness
 

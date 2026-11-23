@@ -58,8 +58,10 @@ are not comparable across machines; node counts and W/D/L are.
 | Iterative deepening, 50 ms budget | M3 | returned depth and elapsed | -- | depth 2 in 50-67 ms | INCONCLUSIVE |
 | Piece-square tables | M4 | win rate vs material, 10 games | -- | 70% (7W 1D 2L) | INCONCLUSIVE |
 | Mobility + king safety (`full`) | M4 | win rate vs `material_pst`, 10 games | -- | 30% (3W 1D 6L) | INCONCLUSIVE |
-| Mobility + king safety (`full`) | M4 | evaluation cost | 4.10 us | 61.05 us | HURT |
-| Mobility + king safety (`full`) | M4 | search speed at depth 3 | 15,915 nodes/s | 7,948 nodes/s | HURT |
+| Positional clamps (150 / 200 / 150) | M4 v2 | largest positional total vs a chariot | unbounded | 500 vs 900, clamps fired 0% | HELPED |
+| Evaluator smoke check, depth 2 | M4 v2 | richer evaluator's win rate vs material | -- | 50% / 80% / 90% | INCONCLUSIVE |
+| Evaluator cost, depth 3, 60 positions | M4 v2 | `full` evaluation cost | 2.31 us (material) | 62.29 us | HURT |
+| Evaluator cost, depth 3, 60 positions | M4 v2 | `full` search speed | 15,366 nodes/s | 8,113 nodes/s | HURT |
 
 ## Problem definition
 
@@ -540,4 +542,98 @@ of 3,056,865, and with a fixed 200 ms budget it completes depth 2-3 per move, at
 - **Caveat:** one machine; the ms-per-move figures include everything the search does
   at that depth, so they show the end-to-end price, not the evaluation alone.
 - **Verdict:** HURT (cost only; strength is unresolved).
+
+---
+
+## 2026-11-23 -- Positional clamps and evaluator bounds (M4 v2)
+
+- **Commit/tag:** this commit, tag `m4-eval-v2`. The original `m4-eval` tag stays on
+  the earlier commit, which the three entries above reference.
+- **What changed:** every positional feature is now clamped after weighting to a named
+  budget -- PST 150, mobility 200, king safety 150 centipawns -- so the positional
+  total cannot exceed 500. Added `evaluate_from_red` (absolute Red view) and the
+  mate-margin test. **No table value and no weight was changed.** The chariot
+  open-file question is documented as a limitation: the central-file preference is a
+  static proxy, and no open-file feature was added (the proposal lists four features).
+- **Setup:** `pytest -q tests/test_eval.py`; `python -m tools.clamp_stats` over the 60
+  middlegame positions, the 10 sparse endgames and the 6 quiet positions.
+- **Result:** clamps fired on **0 of 60** middlegame, **0 of 10** endgame and **0 of 6**
+  quiet positions (0.0% for each of the three features). Bounds: largest positional
+  total 500 < chariot 900; largest evaluation 5,300 + 500 = 5,800; 5,800 + 300-ply mate
+  adjustment = 6,100 < `MATE_SCORE` 100,000.
+- **Observation:** MEASURED: the clamp never fires on these sets, so it is a
+  structural guarantee for extreme positions, not a live tuning knob. The
+  no-outweigh-a-chariot and mate-margin properties are now enforced by construction
+  and asserted, rather than being usually true.
+- **Caveat:** the sets are samples; a deliberately lopsided position can hit a budget
+  -- which is exactly what the clamp is for.
+- **Verdict:** HELPED.
+
+---
+
+## 2026-11-23 -- Evaluator smoke check at depth 2 (M4 v2)
+
+- **Commit/tag:** `m4-eval-v2` (sanity check only; nothing tuned).
+- **What changed:** none. This is the specified wiring check, run after the v2 change.
+- **Setup:** fixed depth 2, 10 games per pairing (5 per colour), seed 1, 6-ply
+  openings, 8 workers. Commands, one per richer evaluator (replace the evaluator
+  name): `python -m harness.tournament --bot-a alphabeta --bot-a-params '{"depth": 2,
+  "evaluator": "full"}' --bot-b alphabeta --bot-b-params '{"depth": 2, "evaluator":
+  "material"}' --games 10 --seed 1 --workers 8 --no-save`.
+- **Result:**
+
+  | richer evaluator | W | D | L | win rate | avg plies | ms/move |
+  |---|---|---|---|---|---|---|
+  | material_pst | 5 | 2 | 3 | 50% | 60.0 | 16.0 |
+  | material_pst_mobility | 8 | 2 | 0 | 80% | 58.2 | 24.6 |
+  | full | 9 | 1 | 0 | 90% | 67.5 | 27.6 |
+
+- **Observation:** MEASURED: every richer evaluator won at least half of its games and
+  none lost badly (the "2 or fewer wins" trigger never fired), so no bug hunt was
+  needed. LIKELY: the ordering PST < PST+mobility < full is real, since each step adds
+  information, but 10 games cannot separate them -- the 95% interval for 5/10 is about
+  20-80%.
+- **Caveat:** 10 games is too noisy to rank evaluators. M6 runs the real comparison.
+- **Verdict:** INCONCLUSIVE.
+
+---
+
+## 2026-11-23 -- Evaluator cost on the full middlegame set (M4 v2)
+
+- **Commit/tag:** `m4-eval-v2`.
+- **What changed:** none; this replaces the earlier 5-position cost measurement with
+  the factory on all 60 M3 positions.
+- **Setup:** `python -m tools.eval_cost --limit 60 --depth 3`.
+- **Result:** per evaluation: material **2.31 us**, `material_pst` **4.20 us**,
+  `material_pst_mobility` **43.38 us**, `full` **62.29 us**. Search at depth 3 over 60
+  positions: material 101,720 nodes / 15,366 nodes/s / 110.3 ms per move;
+  `material_pst` 107,309 / 14,753 / 121.2; `material_pst_mobility` 108,625 / 9,407 /
+  192.4; `full` 107,735 / 8,113 / 221.3.
+- **Observation:** MEASURED: mobility is the expensive feature (~39 us per call,
+  counting pseudo-legal moves for both sides), so `full` is about twice as slow per
+  move as material at the same depth. The node counts differ slightly because a
+  different evaluation changes which lines are pruned, not the depth reached.
+- **Caveat:** one machine; fixed depth, so the numbers show cost at equal depth and
+  say nothing about strength.
+- **Verdict:** HURT (cost only).
+
+---
+
+## 2026-11-23 -- Fixed-depth search with no time limit (M4 v2)
+
+- **Commit/tag:** `m4-eval-v2`.
+- **What changed:** nothing; a test of the behaviour the M6 depth-scaling experiment
+  depends on.
+- **Setup:** `AlphaBetaBot(depth=3, time_limit_ms=None)` with a counting fake clock on
+  the start position; also `AlphaBetaBot()` with no depth and an empty budget, under
+  `pytest -q -k fixed_depth`.
+- **Result:** the depth-3 search completed depth 3 and read the clock **exactly twice**
+  (once for the start time, once for `elapsed_ms`); no reads came from the node
+  counter, confirming there is no deadline check. With no depth and no limit the bot
+  falls back to `DEFAULT_DEPTH` (4) and still performs no clock checks.
+- **Observation:** MEASURED: `_tick` short-circuits when `deadline is None`, so a
+  fixed-depth search is a pure tree search. M6 can therefore use depth as the
+  independent variable without the clock interfering.
+- **Caveat:** property check, no before/after.
+- **Verdict:** INCONCLUSIVE.
 

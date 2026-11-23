@@ -13,6 +13,7 @@ import pytest
 
 from bots.alphabeta import (
     CLOCK_CHECK_INTERVAL,
+    DEFAULT_DEPTH,
     INFINITY,
     MATE_SCORE,
     MATE_THRESHOLD,
@@ -207,6 +208,39 @@ class _FakeClock:
     def __call__(self) -> float:
         self.reads += 1
         return 0.0 if self.reads == 1 else 1.0
+
+
+class _CountingClock:
+    """Clock that just counts how often the search asks for the time."""
+
+    def __init__(self) -> None:
+        self.reads = 0
+
+    def __call__(self) -> float:
+        self.reads += 1
+        return 0.0
+
+
+def test_fixed_depth_search_never_checks_the_clock() -> None:
+    # With no time limit the search must be a pure fixed-depth search: no deadline,
+    # therefore no clock reads inside the tree. The M6 depth-scaling experiment
+    # depends on this, so it is tested rather than assumed.
+    clock = _CountingClock()
+    bot = AlphaBetaBot(depth=3, time_limit_ms=None, time_source=clock)
+    result = bot.choose_move(Board.start(), Budget())
+
+    assert result.depth == 3
+    assert result.nodes > 0
+    # Exactly two reads: one for the start time, one for elapsed_ms. None from _tick.
+    assert clock.reads == 2
+
+
+def test_no_limits_means_the_default_fixed_depth() -> None:
+    # No configured depth and no configured or requested time limit: the bot uses
+    # DEFAULT_DEPTH, still as a fixed-depth search.
+    bot = AlphaBetaBot()
+    result = bot.choose_move(Board.start(), Budget())
+    assert result.depth == DEFAULT_DEPTH
 
 
 def test_iterative_deepening_returns_the_last_completed_depth(monkeypatch) -> None:

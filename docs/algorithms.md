@@ -150,23 +150,51 @@ convention, the evaluator is a weighted sum:
 score = w_material * material + w_pst * pst + w_mobility * mobility + w_safety * king_safety
 ```
 
+**Units of the weights.** Material and PST are already in centipawns, so weight 1
+means "use the value as it is". Mobility is a *move count*, so its weight is
+centipawns per extra pseudo-legal move; the default is 2. King safety is a sum of its
+own centipawn constants, so weight 1 uses it as is. The defaults are
+`{"material": 1, "pst": 1, "mobility": 2, "king_safety": 1}`.
+
+`evaluate_from_red(board, evaluator)` is the absolute view: it negates the side-to-
+move score when Black is to move, so the same placement always reports the same
+number and a Red advantage is positive whoever is to move.
+
 **Material** is the piece values (chariot 900, cannon 450, horse 400, advisor 200,
 elephant 200, soldier 100, or 200 once it has crossed the river). It is implemented
 as a flat table of *signed* values indexed by `piece_code * 90 + square`, so a leaf
 costs one add per occupied square: about 2.4 microseconds. Material has to dominate
 every other term; the positional features are worth tens of centipawns.
 
-**Piece-square tables** add a small bonus for a piece's square: soldiers are worth
-more as they advance, horses prefer the centre (more destinations, fewer blocked
-legs), chariots take central files, advisors and elephants prefer their home points,
-and the general prefers the back rank. Red's tables are written bottom-up, 10 rows of
-9. Black's tables are Red's **flipped by rank** (`r -> 9-r`). That mirror is what
-makes the symmetry acceptance test work even for tables that are not left-right
-symmetric: after a vertical flip and a colour swap, every piece sits on the
-corresponding square of the other colour's table.
+**Piece-square tables** add a small bonus for a piece's square. Table values are
+centipawns; the full set is printed in the README. Soldiers are the clearest example,
+because the table encodes two rules at once -- advance, and then cross the river:
+
+| rank | a | b | c | d | e | f | g | h | i |
+|---|---|---|---|---|---|---|---|---|---|
+| 9 | 26 | 36 | 50 | 66 | 78 | 66 | 50 | 36 | 26 |
+| 8 | 22 | 30 | 42 | 56 | 66 | 56 | 42 | 30 | 22 |
+| 7 | 18 | 24 | 32 | 44 | 52 | 44 | 32 | 24 | 18 |
+| 6 | 14 | 18 | 24 | 32 | 38 | 32 | 24 | 18 | 14 |
+| 5 | 10 | 12 | 16 | 22 | 26 | 22 | 16 | 12 | 10 |
+| 4 | 5 | 5 | 8 | 12 | 15 | 12 | 8 | 5 | 5 |
+| 3-0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+
+A soldier at home scores 0; every step adds a little; crossing the river (rank 5 for
+Red) jumps the value; and the centre of the enemy palace is the peak. Horses prefer
+the centre (more destinations, fewer blocked legs), chariots and cannons prefer the
+central files, advisors and elephants prefer their home points, and the general
+prefers the back rank. Red's tables are written bottom-up, 10 rows of 9; Black uses
+the same values **flipped by rank** (`r -> 9-r`).
+
+One honest limitation: a piece-square table cannot know whether a **file is open** --
+that is a property of the other pieces, not of the square. The chariot table encodes
+a central-file preference as the static proxy, because central files are the ones
+that open first. A real open-file term needs a separate occupancy feature, which the
+proposal does not include.
 
 **Mobility** is the difference in pseudo-legal move counts. Pseudo-legal (rather than
-legal) counts keep the cost down: it is already the most expensive feature at ~38
+legal) counts keep the cost down: it is already the most expensive feature at ~39
 microseconds per evaluation, because it counts moves for both sides. The count is a
 measure of freedom, not of legal options.
 
@@ -174,6 +202,15 @@ measure of freedom, not of legal options.
 board, more so when they are near the general, with penalties for a missing advisor,
 a missing elephant, both missing, or a general standing on the palace's forward rank.
 All constants are named and live next to the code.
+
+**Bounds.** Each positional contribution is clamped after weighting to a named budget
+(PST 150, mobility 200, king safety 150 centipawns), so the three together can never
+exceed 500 and therefore can never outweigh a chariot (900). The largest possible
+evaluation -- one full army with every soldier across the river (5,300) plus that
+budget = 5,800 -- plus the 300-ply mate-distance adjustment stays far below
+`MATE_SCORE` (100,000), so a forced mate always outranks a heuristic score. Both
+inequalities are asserted in `tests/test_eval.py`, and `python -m tools.clamp_stats`
+reports how often a clamp actually fires (0% on the fixed position sets).
 
 The named evaluators add one feature at a time -- `material`, `material_pst`,
 `material_pst_mobility`, `full` -- so the M6 comparison can attribute a difference to
