@@ -97,10 +97,15 @@ xiangqi/
     __main__.py     # `python -m server` starts uvicorn and serves web/
   web/
     index.html      # app shell: setup, play, replay screens
-    app.js          # screen routing and API calls
-    board.js        # board rendering and click handling
+    app.js          # API client (relative API_BASE), routing, shared state
+    setup.js        # setup form generated from /api/bots; recent games
+    play.js         # live play: board clicks, bot stepping, controls
+    play-core.js    # pure play logic (specs, selection, orientation), Node-tested
+    replay-core.js  # pure replay logic (FEN, moves, timeline), Node-tested
+    board.js        # board rendering (flipped mode, selection, clicks)
     replay.js       # replay screen
     style.css
+    tests/          # Node tests: replay-core.test.js, play-core.test.js
   games/            # saved game JSON (gitignored except samples)
   tests/
 ```
@@ -255,6 +260,13 @@ Add human vs bot and bot vs bot play on top of the existing engine and bots. Hum
 2. Play: 9x10 board with river and palace. When a human is to move, clicking a piece highlights it and its legal destination squares (from `legal_moves`); clicking a highlighted square sends the move. Highlight the last move and show a check indicator. Show a thinking indicator while a bot moves, plus the bot's last depth, nodes, time, and eval. Move list, undo, resign, new game, and a banner with result and reason at game end. If a human plays Black, flip the board so they play from the bottom.
 3. Bot vs bot controls on the Play screen: play, pause, step, and speed (delay between moves). Implemented in the frontend by repeatedly calling `/step`; there is no server-side background loop.
 4. Replay: the M7 viewer, with a button to load the game that just finished.
+
+As built (M8 part 2): the Replay screen also shows a *Back to game* button when it is
+opened from Play; opening the app from `file://` (or any non-HTTP origin) hides Setup
+and Play, shows a message pointing at `python -m server`, and leaves Replay with the
+file picker working. The page uses classic scripts only and reaches the API through
+the single relative constant `API_BASE = "api"` in `web/app.js`; no absolute URL
+appears under `web/`.
 
 Acceptance (tests with FastAPI `TestClient`, no browser required):
 - Creating a game with `human` on both sides returns 400.

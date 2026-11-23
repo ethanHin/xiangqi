@@ -3,39 +3,68 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Xiangqi replay</title>
+    <title>Xiangqi</title>
     <!-- Classic scripts only: ES modules are blocked when the page is opened from
-         file://, and nothing here may need the network. -->
+         file://, and nothing here may need the network. Script order matters:
+         replay-core and play-core are pure logic, then board uses play-core, then the
+         screens, then the app shell. -->
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
-    <header class="page-header">
-      <div>
-        <h1>Xiangqi replay</h1>
-        <p class="subtitle">Load a saved game and step through it, move by move.</p>
+    <header class="app-header">
+      <div class="brand">
+        <h1>Xiangqi</h1>
+        <p class="subtitle">Play a bot, or replay a saved game.</p>
       </div>
-      <div class="loader">
-        <label class="button">
-          Open game JSON
-          <input id="file-input" type="file" accept=".json,application/json" />
-        </label>
-        <span id="load-status" class="status" role="status">
-          Drop a game JSON anywhere on the page, or open one with the button.
-        </span>
-      </div>
+      <nav class="tabs" aria-label="Screens">
+        <button type="button" data-screen="setup">Setup</button>
+        <button type="button" data-screen="play" disabled>Play</button>
+        <button type="button" data-screen="replay">Replay</button>
+      </nav>
     </header>
 
-    <main id="replay-root" class="replay-root">
-      <p class="hint">
-        Nothing loaded yet. Pick one of the samples from <code>games/samples/</code>:
-        <code>sample-checkmate.json</code>, <code>sample-stalemate.json</code>,
-        <code>sample-alpha-beta.json</code>, <code>sample-perpetual-check.json</code>,
-        <code>sample-move-cap-draw.json</code> or <code>sample-greedy-vs-random.json</code>.
-      </p>
+    <p id="app-notice" class="app-notice" hidden></p>
+
+    <main>
+      <section id="screen-setup" class="screen">
+        <div id="setup-root"></div>
+      </section>
+
+      <section id="screen-play" class="screen" hidden>
+        <div id="play-root"></div>
+      </section>
+
+      <section id="screen-replay" class="screen" hidden>
+        <div class="replay-bar">
+          <label class="button">
+            Open game JSON
+            <input id="file-input" type="file" accept=".json,application/json" />
+          </label>
+          <span id="load-status" class="status" role="status">
+            Drop a game JSON anywhere on the page, or open one with the button.
+          </span>
+          <button id="back-to-game" type="button" class="button-secondary" hidden>
+            Back to game
+          </button>
+        </div>
+        <div id="replay-root" class="replay-root">
+          <p class="hint">
+            Nothing loaded yet. Pick one of the samples from <code>games/samples/</code>:
+            <code>sample-checkmate.json</code>, <code>sample-stalemate.json</code>,
+            <code>sample-alpha-beta.json</code>, <code>sample-perpetual-check.json</code>,
+            <code>sample-move-cap-draw.json</code> or
+            <code>sample-greedy-vs-random.json</code>.
+          </p>
+        </div>
+      </section>
     </main>
 
     <script src="replay-core.js"></script>
+    <script src="play-core.js"></script>
     <script src="board.js"></script>
     <script src="replay.js"></script>
+    <script src="setup.js"></script>
+    <script src="play.js"></script>
+    <script src="app.js"></script>
   </body>
 </html>

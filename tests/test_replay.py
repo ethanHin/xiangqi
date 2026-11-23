@@ -121,13 +121,25 @@ def test_web_assets_have_no_network_or_module_references() -> None:
         assert "type='module'" not in text, f"{path.name} uses an ES module"
 
 
-def test_index_loads_the_three_classic_scripts() -> None:
+def test_index_loads_the_classic_scripts_in_dependency_order() -> None:
     html = (WEB / "index.html").read_text(encoding="utf-8")
-    for script in ("replay-core.js", "board.js", "replay.js"):
+    scripts = (
+        "replay-core.js",
+        "play-core.js",
+        "board.js",
+        "replay.js",
+        "setup.js",
+        "play.js",
+        "app.js",
+    )
+    positions = []
+    for script in scripts:
         assert f'src="{script}"' in html, script
-    # app.js belongs to M8; the replay page must stand on its own.
-    assert "app.js" not in html
+        positions.append(html.index(f'src="{script}"'))
+    assert positions == sorted(positions), "scripts must load in dependency order"
+    assert 'type="module"' not in html
 
 
-def test_node_core_test_is_committed() -> None:
+def test_node_core_tests_are_committed() -> None:
     assert (WEB / "tests" / "replay-core.test.js").is_file()
+    assert (WEB / "tests" / "play-core.test.js").is_file()

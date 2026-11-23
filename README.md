@@ -4,8 +4,12 @@ A Xiangqi (Chinese Chess) engine, several search bots, a match harness, an
 experiment suite, and a local web app for human-vs-bot and bot-vs-bot play with
 replay.
 
-**Status: M1-M7 complete, and M8 part 1 (the live-play server) done.** M8 part 2 (the
-play UI) is the remaining work.
+**Status: complete (M1-M8).** The engine, bots, evaluation, harness, experiments,
+replay viewer, live-play server and web app are all built; `pytest` is green and
+`python -m server` serves the whole app.
+
+Two things are deliberately out of scope: AlphaZero-style training (future work, no
+code) and any form of online or multi-user play.
 
 ## Quick start
 
@@ -63,13 +67,17 @@ experiments/       # M6 experiments and their committed evidence
   common.py          # flags, streaming CSV, Wilson interval, plots
   README.md          # commands, timings, CSV column guide
   results/           # CSVs, PNGs and (gitignored) per-game JSON
-web/               # static replay viewer (opens from file:// or any static server)
-  index.html       # page shell: loader + #replay-root
+web/               # the browser app: setup, play, replay (classic scripts, no build)
+  index.html       # app shell: Setup / Play / Replay screens
+  app.js           # API client (one relative API_BASE), screen routing, game creation
+  setup.js         # setup form generated from /api/bots, recent-game list
+  play.js          # live play: board clicks, bot stepping, controls, search info
+  play-core.js     # pure play logic (Node-tested): specs, selection, orientation
   replay-core.js   # pure logic: FEN, moves, timeline, display helpers
-  board.js         # SVG board drawing
-  replay.js        # viewer screen: controls, move list, loaders
+  board.js         # SVG board drawing; flipped mode, selection, clicks
+  replay.js        # replay screen: controls, move list, loaders
   style.css
-  tests/           # node web/tests/replay-core.test.js
+  tests/           # node web/tests/replay-core.test.js and play-core.test.js
 server/            # live-play API (M8)
   app.py           # FastAPI app: /api routes, /docs, static / and /games
   registry.py      # bot types, parameter schemas, validation, factory
@@ -91,6 +99,33 @@ How one game runs:
 → validate the move → `board.make_move(move)` → record it → repeat until a result.
 The history stays on the board, so the move cap and the repetition rule see the
 opening plies too.
+
+## Architecture and data flow
+
+```
+engine/        rules, move generation, FEN, hashing   (no dependencies)
+  ^
+bots/          random, greedy, alpha-beta, MCTS      <- eval/ (material, PST,
+  ^                                                     mobility, king safety)
+harness/       one game, tournaments, result records
+  ^                    \
+  |                     experiments/ -> experiments/results/ (CSV, PNG)
+server/        FastAPI: /api + static web/            (no rules or search code)
+  ^
+web/           setup, play, replay (browser; the server's only client)
+```
+
+One human move: the board component reports a square → `play.js` looks it up in the
+`legal_moves` the API returned → `POST /api/games/{id}/move` → the game's lock →
+`board.make_move` + `rules.game_result` → the new state JSON → the page redraws from
+`fen`/`legal_moves` and (human vs bot) calls `POST /step`.
+
+One bot move: `POST /step` → `server/registry.py` builds the bot from the stored
+player spec with the budget clamped to 10 s → `bot.choose_move(board, budget)` →
+validated move → `make_move` → the response adds the `search` block. A finished game
+is written once to `games/<id>.json`; the Replay screen reads it through
+`GET /api/games/{id}/export`, and the same file is served statically at
+`/games/<id>.json` for a replay page without the API.
 
 ## Coordinates and notation
 
@@ -563,9 +598,9 @@ stalemates (also a win), 2 move-cap draws. Reproduce with
   (not the bot's self-report), so a bot that ignores its budget is visible.
 * `eval` is the bot's `score`; `depth` and `nodes` are 0 for the simple bots.
 
-`games/samples/` holds three committed examples: greedy vs random, random vs
-random (a 300-ply cap draw), and an 8-ply perpetual check. Regenerate them with
-`python -m tools.make_samples`.
+`games/samples/` holds six committed examples: greedy vs random, a move-cap draw,
+an 8-ply perpetual check, plus checkmate, stalemate and alpha-beta games with
+per-move search stats. Regenerate them with `python -m tools.make_samples`.
 
 ## Server (M8, part 1: live play API)
 
@@ -576,19 +611,20 @@ rules or search code lives in `server/`.
 **Install** (this project's Windows virtualenv):
 
 ```powershell
-.\venv\Scripts\python.exe -m pip install -e ".[server,dev]"
+.\.venv\Scripts\python.exe -m pip install -e ".[server,dev]"
 ```
 
 That adds `fastapi`, `uvicorn`, and `httpx` (the test client). Start it from the
 project root so `games/` and `web/` resolve:
 
 ```powershell
-.\venv\Scripts\python.exe -m server
+.\.venv\Scripts\python.exe -m server
 ```
 
+* The whole app (Setup, Play, Replay): `http://127.0.0.1:8000/`
 * API: `http://127.0.0.1:8000/api/...`
 * Interactive API docs (try the endpoints by hand): `http://127.0.0.1:8000/docs`
-* Replay viewer (M7): `http://127.0.0.1:8000/` and the openapi schema at `/openapi.json`
+* The openapi schema: `http://127.0.0.1:8000/openapi.json`
 
 Bound to `127.0.0.1` only; no reload, no CORS, no authentication. The game store is
 in memory (200 games, finished ones evicted first). A finished game is written once
@@ -639,20 +675,108 @@ Invoke-RestMethod "http://127.0.0.1:8000/api/games/$($game.id)/export" |
 Open `/docs` to do the same by clicking: `POST /api/games` with the body above,
 then `POST /api/games/{id}/step`, `.../undo`, `.../export`, and so on.
 
+## Playing against a bot (the web app)
+
+Start the server from the project root and open the address it prints (default
+`http://127.0.0.1:8000/`):
+
+```powershell
+.\.venv\Scripts\python.exe -m server
+```
+
+`Ctrl+C` stops it. The app has three screens, reached from the tabs at the top.
+Human vs human is not supported: every game has at least one bot.
+
+**Setup** — pick a player for Red and Black: Human, or any bot returned by
+`GET /api/bots`. The bot list and every parameter control are generated from the
+registry schema, so adding a bot to `server/registry.py` makes it appear here with no
+frontend change. Number parameters get a number input with its `min`/`max`, enums a
+select, booleans a checkbox, and a nullable parameter (a time limit that can be
+off) gets a separate "none / no limit" checkbox. Defaults come from the registry and
+each parameter shows its help text. *Swap sides* exchanges the two choices. *Seed*
+and *Opening plies* are optional (empty seed = random, empty plies = the default 6).
+*Start game* posts to `/api/games`; a server `400` is shown under the form. Both
+sides Human disables *Start game* and says why. *Recent games* lists the games in
+the server's store; *Open in replay* loads one into the Replay screen.
+
+**Play** — the board is drawn from the API's `fen`; nothing in the page decides
+legality, check or the result. A square is clickable only if it is the from-square of
+a move in `legal_moves`: click it to select it and show its destinations, click
+another such square to switch the selection, click a highlighted destination to send
+`POST /move`, click elsewhere to deselect. The last move is highlighted, and when
+`in_check` is true the side-to-move's general is ringed and "Check" is shown.
+
+* Human vs bot: the bot replies automatically after your move (and immediately after
+  game creation if the bot moves first). After *Undo* it does **not** auto-step —
+  use the *Bot move* button that appears, so a deterministic bot cannot be stepped in
+  a loop with undo.
+* Bot vs bot: *Play* / *Pause* / *Step* and a speed slider (0-2000 ms between moves).
+  The page just calls `/step` repeatedly; there is no server-side loop. Play stops
+  at game over, and Pause takes effect after the in-flight move returns.
+* Only one request runs at a time per game: the board and buttons are disabled and a
+  "Thinking… N s" line counts the elapsed time.
+* The search line shows what the last `/step` used: requested vs applied time limit,
+  depth, nodes (or MCTS iterations) and eval. The move list scrolls.
+* Buttons: *Undo* (pairs of plies in human vs bot; never below the post-opening
+  position, and it clears a finished result), *Resign* (the human side; hidden in
+  bot vs bot), *New game*, *Open in replay* (with a *Back to game* button on the
+  replay screen), and *Download game JSON* (the `/export` payload).
+
+At game over a banner shows the result and reason (including `resign`). Server `400`
+messages and network failures appear in the message area; if the server was
+restarted and no longer knows the game (`404`), the page says so and offers *New
+game*. Nothing depends on `localStorage`.
+
+**Manual check (M8 acceptance):** with the server running, start Human (Red) vs
+Alpha-beta (Black, depth 2, a short time limit) and play a few moves; the bot should
+answer each one. Then start MCTS vs Alpha-beta and press *Play*: the game should run
+to a banner, and *Open in replay* should show it move by move. Both checks were also
+run with headless Chrome during development.
+
+**Replay** — the M7 viewer: open a game JSON with the file button or by dropping it
+on the page, step through it, and use `?game=<path>` when served over HTTP. When you
+arrive from *Open in replay*, *Back to game* returns to the live board.
+
+**Opening the page from `file://`** (double-clicking `web/index.html`) cannot reach
+the API. The app detects that, hides Setup and Play, says "Live play needs the
+server: run python -m server and open the address it prints", and leaves the Replay
+screen (file picker and drag-and-drop) fully working.
+
+Implementation notes: classic `<script>` tags only (no modules, no build step, no
+frameworks, no CDN or web fonts), and no absolute URL anywhere — the API is reached
+through the single relative constant `API_BASE = "api"` in `web/app.js`. All logic
+that is testable without a browser lives in `web/play-core.js` (player specs, square
+selection, both board orientations, the auto-step decision, error messages) and
+`web/replay-core.js`.
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest -q     # 174 fast tests, including server + replay
+node web/tests/play-core.test.js            # 221 checks of the play logic
+node web/tests/replay-core.test.js          # 658 checks against engine fixtures
+```
+
+There is no browser automation in the repository. The UI was checked by hand and with
+headless Chrome (screenshots of Setup, Play with a selected piece, and the game-over
+banner) during development.
+
 ## Replay viewer (M7)
 
-`web/index.html` is the replay screen: it loads a saved Game JSON and steps through
-it. No server is needed for the normal case, no network is touched, and there is no
+The Replay screen (`web/replay.js` plus `replay-core.js` and `board.js`) loads a saved
+Game JSON and steps through it. It needs no server, touches no network, and has no
 rules logic — the board is built from `start_fen` plus the recorded moves, and the
-result and reason are read from the file.
+result and reason are read from the file. In the M8 app it is the Replay tab; opened
+on its own it is still the whole page.
 
 ```bash
-# 1. by double-clicking (file picker or drag-and-drop)
+# 1. by double-clicking (file picker or drag-and-drop; Setup and Play are hidden)
 start web/index.html
 
-# 2. over HTTP, which also enables ?game=<path>
+# 2. with the app server, which also enables ?game=<path>
+.\.venv\Scripts\python.exe -m server
+# http://127.0.0.1:8000/?game=games/samples/sample-checkmate.json
+
+# 3. with any static server (note the path is relative to the document)
 python -m http.server 8000
-# then open (note the path is relative to web/)
 # http://localhost:8000/web/index.html?game=../games/samples/sample-checkmate.json
 ```
 
@@ -720,6 +844,6 @@ become a cannon's screen), which is what took depth 4 from 23 s in M1 to 5 s.
 - ~~M5 plain MCTS~~ (done)
 - ~~M6 experiments (depth scaling, heuristic comparison)~~ (done)
 - ~~M7 replay viewer~~ (done)
-- M8 live play server and web UI — server done, play UI next
+- ~~M8 live play server and web UI~~ (done)
 
 AlphaZero-style neural MCTS is explicitly future work and has no code here.
