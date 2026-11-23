@@ -1,0 +1,55 @@
+"""Helpers shared by the engine tests.
+
+``board_from`` builds a position from named squares, which keeps the quirk tests
+readable: a horse-leg test says exactly where the horse and the blocker are
+instead of hiding them inside a 10-field FEN string.
+"""
+
+from __future__ import annotations
+
+from engine.board import Board
+from engine.types import BOARD_FILES, BOARD_RANKS, FILE_LETTERS, Move
+
+
+def board_from(pieces: dict[str, str], side_to_move: str = "w") -> Board:
+    """Build a board from ``{"e1": "N", "e2": "P"}``.
+
+    Uppercase letters are Red pieces, lowercase are Black (k a b n r c p).
+    ``side_to_move`` is ``"w"`` for Red or ``"b"`` for Black.
+    """
+    rows: list[str] = []
+    for rank in range(BOARD_RANKS - 1, -1, -1):
+        row: list[str] = []
+        empty_run = 0
+        for file in range(BOARD_FILES):
+            char = pieces.get(f"{FILE_LETTERS[file]}{rank}")
+            if char is None:
+                empty_run += 1
+                continue
+            if empty_run:
+                row.append(str(empty_run))
+                empty_run = 0
+            row.append(char)
+        if empty_run:
+            row.append(str(empty_run))
+        rows.append("".join(row))
+    return Board.from_fen("/".join(rows) + f" {side_to_move} - - 0 1")
+
+
+def move_names(moves: list[Move]) -> set[str]:
+    """ICCS names of a list of moves, for set comparisons."""
+    return {move.to_iccs() for move in moves}
+
+
+def find_move(board: Board, name: str) -> Move:
+    """Return the legal move with ICCS name ``name``, or fail with a useful message."""
+    for move in board.legal_moves():
+        if move.to_iccs() == name:
+            return move
+    raise AssertionError(f"{name} is not legal in {board.to_fen()}")
+
+
+def play(board: Board, names: str) -> None:
+    """Play a space-separated list of ICCS moves, asserting each one is legal."""
+    for name in names.split():
+        board.make_move(find_move(board, name))

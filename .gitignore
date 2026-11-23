@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+
+# Virtual environments
+.venv/
+venv/
+
+# Generated experiment data (CSV and plots are reproducible from the scripts)
+experiments/results/
+
+# Saved games are runtime data; sample games are kept
+games/*.json
+!games/samples/

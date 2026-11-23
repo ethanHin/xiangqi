@@ -1,0 +1,27 @@
+[project]
+name = "xiangqi"
+version = "0.1.0"
+description = "Xiangqi (Chinese Chess) engine, search bots, match harness, and web app."
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0", "ruff>=0.4"]
+server = ["fastapi", "uvicorn"]
+web-tests = ["httpx"]
+plots = ["matplotlib"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+# `slow` marks tests that take minutes (perft depth 4, 100-game acceptance matches).
+# They are deselected by default; run them with `pytest -m slow`.
+markers = ["slow: long-running test; run with -m slow"]
+addopts = "-m 'not slow'"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
