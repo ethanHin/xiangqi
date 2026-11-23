@@ -30,6 +30,16 @@ def test_checkmate_is_a_loss_for_the_side_to_move() -> None:
     assert rules.game_result(board) == Result(winner=Color.RED, reason=Reason.CHECKMATE)
 
 
+def test_checkmate_mirrored_is_a_loss_for_red() -> None:
+    # The same mate from the other side: Red's general on e0 is boxed in by a
+    # chariot on the back rank and one on the e-file. "Side to move loses" must
+    # not be colour-specific.
+    board = board_from({"e0": "K", "a0": "r", "e9": "r", "d9": "k"}, side_to_move="w")
+    assert board.is_in_check() is True
+    assert board.legal_moves() == []
+    assert rules.game_result(board) == Result(winner=Color.BLACK, reason=Reason.CHECKMATE)
+
+
 def test_stalemate_is_also_a_loss() -> None:
     # Black is not in check but has no legal move: d9 and f9 are covered by the
     # chariots on the d- and f-files, e8 by the soldier on e7.
@@ -70,6 +80,14 @@ def test_synthetic_one_sided_perpetual_check() -> None:
     )
 
 
+def test_synthetic_one_sided_perpetual_check_by_black() -> None:
+    # Mirror image: Black is the only side checking, so Red wins.
+    history = _synthetic_history(red_checks=(False, False), black_checks=(True, True))
+    assert rules.repetition_result(history) == Result(
+        winner=Color.RED, reason=Reason.PERPETUAL_CHECK
+    )
+
+
 def test_mutual_checks_are_a_draw() -> None:
     # Both sides check on every move of the cycle, so neither is "the" perpetual
     # checker and the rule falls back to a draw.
@@ -80,6 +98,13 @@ def test_mutual_checks_are_a_draw() -> None:
 def test_one_sided_checks_must_cover_every_move() -> None:
     # Red checks on only one of its two moves, so this is not a perpetual check.
     history = _synthetic_history(red_checks=(True, False), black_checks=(False, False))
+    assert rules.repetition_result(history) == Result(winner=None, reason=Reason.REPETITION)
+
+
+def test_checker_faces_a_counter_check() -> None:
+    # Red checks on every move, but Black checks once: the opponent did not check
+    # on *none* of its moves, so the perpetual-check exception does not apply.
+    history = _synthetic_history(red_checks=(True, True), black_checks=(True, False))
     assert rules.repetition_result(history) == Result(winner=None, reason=Reason.REPETITION)
 
 
