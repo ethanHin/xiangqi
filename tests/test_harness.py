@@ -254,7 +254,7 @@ def test_build_bot_and_specs() -> None:
     assert isinstance(random_bot, RandomBot)
     assert random_bot.spec == {"type": "random", "params": {}}
     assert isinstance(build_bot(_greedy_spec()), GreedyBot)
-    assert set(BOT_TYPES) == {"random", "greedy", "alphabeta"}
+    assert set(BOT_TYPES) == {"random", "greedy", "alphabeta", "mcts"}
 
     with pytest.raises(ValueError, match="player, not a bot"):
         build_bot({"type": "human"})

@@ -220,5 +220,71 @@ one feature. Weights live in `DEFAULT_WEIGHTS` and can be overridden per evaluat
 
 ## MCTS
 
-Not implemented yet; plain UCT arrives in M5 (`bots/mcts.py`) and will be documented
-here with its four phases: selection, expansion, rollout, and backpropagation.
+**File:** `bots/mcts.py`. Plain UCT with random rollouts; no neural network, no
+policy, no value head. The four phases are one method each, in the order they run:
+
+**1. Selection** (`_select`, `_best_child`). Start at the root and walk down, always
+entering the child with the highest UCT score, until a node that is not fully
+expanded (or a terminal node) is reached. For a node with `N` visits and a child with
+`n` visits and average reward `Q`:
+
+```
+UCT = Q + c * sqrt(ln N / n)
+```
+
+The first term is exploitation (the child has paid off so far); the second is
+exploration, large for rarely visited children and shrinking as they are visited. `c`
+is the exploration constant (default 1.4). This formula assumes rewards in **[0, 1]**,
+which is why every value is mapped into that range before it is stored -- a reward
+outside the range would make the two terms incomparable.
+
+**2. Expansion** (`_expand`). Add one child for a randomly chosen untried move, then
+ask the engine's `rules.game_result` whether the position is already over. That single
+call covers checkmate, stalemate, the 300-ply cap, and repetition, so the tree uses
+exactly the rules the game does. Terminal children are scored immediately; no rollout
+runs from them.
+
+**3. Simulation** (`_rollout`). From the new child, play random legal moves for at
+most `rollout_depth` plies (default 30). If a player has no legal move, the rollout
+ends with that player's loss; if the ply cap is reached, the rollout ends as a draw.
+Otherwise the position is evaluated and squashed into a reward for the side to move:
+
+```
+reward = 0.5 + 0.5 * tanh(score_in_centipawns / EVAL_SCALE)
+```
+
+`EVAL_SCALE = 600` centipawns: one `tanh` unit. A 600-point advantage is already close
+to decisive (that is a bit less than a chariot), so the squash saturates around there
+instead of giving absurd rewards for a rook up. The squash keeps every evaluation
+inside (0, 1) while preserving the sign convention of the evaluation.
+
+Rollout policy: uniform random legal moves, optionally with `capture_bias` (default
+off) making a capture likely. Rollouts move with `record_check=False` for speed.
+
+> **NOTE:** rollouts do not model the perpetual-check rule and do not detect
+> repetition inside the rollout; only "no legal moves loses" and the 300-ply cap are
+> enforced there. Tree nodes are exact: they use `record_check=True` and
+> `game_result`.
+
+**4. Backpropagation** (`_backpropagate`). Add the reward to every node on the path
+from the leaf to the root. Values are stored **for the player who moved into the
+node**, so at each edge the reward flips: `reward = 1 - reward`. That is the whole
+sign convention, and `tests/test_mcts.py` pins it down with a hand-built tree: the
+node reached by Red's move gets 1.0 for a Red win and the node reached by Black's move
+one ply above gets 0.0. A sign error here makes the bot play to lose, which is why it
+has its own test.
+
+**Choosing the move.** The move is the **most-visited root child** (ties go to the
+earlier child, keeping seeded runs deterministic), not the highest average value: with
+few visits the average is noisy, while visit counts are what the search actually
+invested in. The reported depth is the length of the **most-visited line** below the
+root, and the reported score converts the chosen child's mean reward back to
+centipawns with the inverse squash, `EVAL_SCALE * atanh(2q - 1)`, clamped to
+`MAX_REPORTED_SCORE` (5,000) because `atanh` diverges near 0 and 1.
+
+**Budget.** Either a fixed iteration count (deterministic for a given seed) or a time
+limit, checked every `CLOCK_CHECK_INTERVAL` iterations rather than every iteration; if
+both are set, the search stops at whichever comes first. All randomness comes from one
+`random.Random` seeded per bot instance. The board is never copied: the search moves
+down the tree with `make_move` and unwinds everything in a `finally` block, so it ends
+exactly where it started (tested on FEN, hash and history length).

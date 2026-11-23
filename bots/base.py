@@ -97,6 +97,14 @@ BOT_DEFAULTS: dict[str, dict[str, Any]] = {
         "evaluator": "material",
         "quiescence": False,
     },
+    "mcts": {
+        "iterations": 1000,
+        "time_limit_ms": None,
+        "exploration": 1.4,
+        "rollout_depth": 30,
+        "evaluator": "full",
+        "capture_bias": 0.0,
+    },
 }
 
 BOT_TYPES: tuple[str, ...] = tuple(BOT_DEFAULTS)
@@ -128,6 +136,10 @@ def build_bot(spec: Mapping[str, Any], seed: int | None = None) -> Bot:
         from bots.alphabeta import AlphaBetaBot
 
         return AlphaBetaBot(**params)
+    if bot_type == "mcts":
+        from bots.mcts import MCTSBot
+
+        return MCTSBot(seed=seed, **params)
     if bot_type == "human":
         raise ValueError("'human' is a player, not a bot; the server handles human moves")
     raise ValueError(f"unknown bot type {bot_type!r}; known types: {', '.join(BOT_TYPES)}")

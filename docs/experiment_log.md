@@ -57,11 +57,14 @@ are not comparable across machines; node counts and W/D/L are.
 | Alpha-beta vs greedy (acceptance) | M3 | win rate vs greedy | -- | 99% | INCONCLUSIVE |
 | Iterative deepening, 50 ms budget | M3 | returned depth and elapsed | -- | depth 2 in 50-67 ms | INCONCLUSIVE |
 | Piece-square tables | M4 | win rate vs material, 10 games | -- | 70% (7W 1D 2L) | INCONCLUSIVE |
-| Mobility + king safety (`full`) | M4 | win rate vs `material_pst`, 10 games | -- | 30% (3W 1D 6L) | INCONCLUSIVE |
+| Mobility + king safety (`full`) | M4 | `full` win rate vs `material_pst`, 10 games | -- | 30% (3W 1D 6L) | INCONCLUSIVE |
 | Positional clamps (150 / 200 / 150) | M4 v2 | largest positional total vs a chariot | unbounded | 500 vs 900, clamps fired 0% | HELPED |
 | Evaluator smoke check, depth 2 | M4 v2 | richer evaluator's win rate vs material | -- | 50% / 80% / 90% | INCONCLUSIVE |
 | Evaluator cost, depth 3, 60 positions | M4 v2 | `full` evaluation cost | 2.31 us (material) | 62.29 us | HURT |
 | Evaluator cost, depth 3, 60 positions | M4 v2 | `full` search speed | 15,366 nodes/s | 8,113 nodes/s | HURT |
+| MCTS vs random (acceptance) | M5 | win rate, 100 games, 200 iterations | -- | 100% (100W 0D 0L) | INCONCLUSIVE |
+| MCTS iterations 100 -> 400 -> 1600 | M5 | win rate vs greedy, 10 games per arm | 10% | 70% | INCONCLUSIVE |
+| UCT exploration 0.7 -> 1.4 -> 2.0 | M5 | win rate vs greedy at 400 iterations | 80% (c=0.7) | 30% (c=2.0) | INCONCLUSIVE |
 
 ## Problem definition
 
@@ -88,6 +91,12 @@ moves**. Across the 103 saved games in `games/` (16,179 positions, replayed by
 | 20-39 | 1,993 | 31.02 |
 | 40-59 | 1,960 | 27.53 |
 | 60+ | 10,199 | 24.42 |
+
+**Caveat on that sample:** the 103 saved games are almost all greedy-vs-random, plus
+a random-vs-random sample and a scripted 8-ply game. Random play trades pieces
+differently from a searching player, so the 26.9 figure understates how wide a
+typical alpha-beta game is. It will be recomputed from alpha-beta vs alpha-beta
+games after M6, once those exist in quantity.
 
 **Transition model.** Deterministic and known: `board.make_move(move)` updates the
 position, the hash, and the move history; `unmake_move()` restores them exactly.
@@ -508,8 +517,9 @@ of 3,056,865, and with a fixed 200 ms budget it completes depth 2-3 per move, at
 - **Setup:** alpha-beta at fixed depth 3, `material_pst` vs `full`, 10 games, seed 1,
   6-ply openings, 8 workers. Same command with the two evaluator names swapped. A
   third 10-game pairing, `material` vs `full`, was run for context.
-- **Result:** `material_pst` **6W 1D 3L** vs `full` 3W 1D 6L -- the full evaluator won
-  **30%**. In the third pairing `full` beat `material` **6W 0D 4L (60%)**. Average
+- **Result:** `material_pst` **6W 1D 3L** vs `full` 3W 1D 6L -- `full` won **30%** in
+  this `full`-vs-`material_pst` matchup. In the third pairing (10 games, same setup),
+  `full` beat `material` **6W 0D 4L (60%)**. Average
   129.8 plies and 136.7 ms per move in the PST/full match.
 - **Observation:** MEASURED: the three pairings are intransitive (PST > material,
   full > material, PST > full), which is what 10-game noise looks like. The negative
@@ -637,3 +647,77 @@ of 3,056,865, and with a fixed 200 ms budget it completes depth 2-3 per move, at
 - **Caveat:** property check, no before/after.
 - **Verdict:** INCONCLUSIVE.
 
+---
+
+## 2026-11-23 -- MCTS added: acceptance against random (M5)
+
+- **Commit/tag:** `m5-mcts`.
+- **What changed:** plain UCT MCTS (select, expand, random rollout, backpropagate),
+  values in [0, 1], the `full` evaluator squashed at the rollout cutoff, most-visited
+  root child as the move.
+- **Setup:** MCTS vs random, 100 games (50 per colour), seed 1, 6-ply openings, 200
+  iterations per move, 8 workers, harness time limit 10 s (large enough that the
+  iteration budget always decides). Command: `python -m harness.tournament --bot-a
+  mcts --bot-a-params '{"iterations": 200}' --bot-b random --games 100 --seed 1
+  --workers 8 --time-limit-ms 10000 --no-save`.
+- **Result:** **100W 0D 0L (100%)**, target 95%. Average game 96.5 plies, 84
+  checkmates and 16 stalemates (a win), 296.8 s wall clock, 0 games reached the
+  300-ply cap.
+- **Observation:** MEASURED: even 200 iterations wins every game against random, and
+  the games end by mate or stalemate rather than the cap, so the tree's terminal
+  scoring is working. The 200-iteration budget keeps a 100-game run at about five
+  minutes; the bot's default is 1000.
+- **Caveat:** acceptance check, no matched before/after -- the verdict convention
+  calls that INCONCLUSIVE even though the target is met. Only one opponent.
+- **Verdict:** INCONCLUSIVE.
+
+---
+
+## 2026-11-23 -- MCTS iteration scaling (M5)
+
+- **Commit/tag:** `m5-mcts` (informational run; no default changed).
+- **What changed:** nothing; the iteration budget was varied to see the scaling curve.
+- **Setup:** MCTS vs greedy, 10 games per arm, colours swapped, seed 1, 6-ply
+  openings, 8 workers, 10 s safety limit; 100, 400 and 1600 iterations.
+  `python -m tools.mcts_sweep --sweep iterations`.
+- **Result:**
+
+  | iterations | W | D | L | win rate | iterations/s | avg depth | avg ms/move | avg plies |
+  |---|---|---|---|---|---|---|---|---|
+  | 100 | 1 | 1 | 8 | 10% | 552 | 1.47 | 181 | 141.6 |
+  | 400 | 4 | 1 | 5 | 40% | 536 | 1.62 | 747 | 96.4 |
+  | 1600 | 7 | 0 | 3 | 70% | 502 | 2.12 | 3186 | 78.6 |
+
+- **Observation:** MEASURED: the win rate rises monotonically with the budget, and
+  the games get shorter as the search plays better. At 100 iterations MCTS loses badly
+  to a one-ply greedy bot: the tree is almost flat (most-visited line 1.47 plies) and
+  30-ply random rollouts carry little signal. Even 1600 iterations only reach depth
+  2.12, which explains why MCTS is not yet dominant.
+- **Caveat:** 10 games per arm; the defaults (1000 iterations) were chosen by
+  reasoning for playability, not from this table.
+- **Verdict:** INCONCLUSIVE.
+
+---
+
+## 2026-11-23 -- MCTS exploration constant (M5)
+
+- **Commit/tag:** `m5-mcts` (informational run; the default stays 1.4).
+- **What changed:** nothing; the UCT exploration constant was varied.
+- **Setup:** MCTS vs greedy, 400 iterations, 10 games per arm, colours swapped, seed
+  1, 6-ply openings, 8 workers. `python -m tools.mcts_sweep --sweep exploration`.
+- **Result:**
+
+  | c | W | D | L | win rate | iterations/s | avg depth | avg ms/move | avg plies |
+  |---|---|---|---|---|---|---|---|---|
+  | 0.7 | 8 | 0 | 2 | 80% | 549 | 1.71 | 729 | 92.9 |
+  | 1.4 | 4 | 1 | 5 | 40% | 557 | 1.62 | 718 | 96.4 |
+  | 2.0 | 3 | 2 | 5 | 30% | 607 | 1.97 | 659 | 136.5 |
+
+- **Observation:** MEASURED: the lower constant looked better in this sample, and the
+  c = 1.4 row reproduces the 400-iteration row of the previous sweep game for game,
+  which is a useful check that the search is deterministic given seed and iterations.
+  LIKELY: at 400 iterations most children are under-sampled, so extra exploration
+  spends visits on lines that have no time to become informative.
+- **Caveat:** 10 games. The default remains 1.4 as specified; changing it on this
+  evidence would be tuning to noise, and M6 is where a real comparison belongs.
+- **Verdict:** INCONCLUSIVE.

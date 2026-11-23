@@ -4,9 +4,9 @@ A Xiangqi (Chinese Chess) engine, several search bots, a match harness, an
 experiment suite, and a local web app for human-vs-bot and bot-vs-bot play with
 replay.
 
-**Status: M1 (engine core), M2 (baselines and match harness), M3 (alpha-beta) and M4
-(evaluation) complete.** Later milestones (MCTS, experiments, server, web UI) are
-described in `AGENTS.md`.
+**Status: M1 (engine core), M2 (baselines and match harness), M3 (alpha-beta), M4
+(evaluation) and M5 (plain MCTS) complete.** Later milestones (experiments, server,
+web UI) are described in `AGENTS.md`.
 
 ## Quick start
 
@@ -39,6 +39,7 @@ bots/              # one class per algorithm, all behind bots.base.Bot
   random_bot.py
   greedy_bot.py
   alphabeta.py     # iterative-deepening alpha-beta, reference minimax, node counts
+  mcts.py          # plain UCT MCTS: select, expand, rollout, backpropagate
 eval/              # evaluation features
   material.py      # piece values, crossed-soldier bonus, material balance
   pst.py           # piece-square tables, mirrored for Black by flipping ranks
@@ -139,6 +140,7 @@ server and the Game JSON use.
 | `random` | uniform random legal move, seeded |
 | `greedy` | one-ply material with mate-in-one detection |
 | `alphabeta` | iterative-deepening alpha-beta; params `depth`, `time_limit_ms`, `evaluator`, `quiescence` |
+| `mcts` | plain UCT MCTS; params `iterations`, `time_limit_ms`, `exploration`, `rollout_depth`, `evaluator`, `capture_bias` |
 
 `greedy` is the M2 yardstick for alpha-beta. How it picks a move, in order:
 
@@ -431,6 +433,57 @@ opponent at depth 2. M6 runs the real comparison with a proper sample. The full 
 including the earlier depth-3 exploratory matches (which disagreed with each other),
 is in `docs/experiment_log.md`.
 
+## MCTS (M5)
+
+`bots/mcts.py` is plain UCT MCTS: selection by UCT, expansion of one child at a time,
+a random rollout capped at `rollout_depth` plies, and backpropagation. `docs/algorithms.md`
+walks through each phase; the points that matter for reading the numbers:
+
+* Node values are stored **for the player who moved into the node**, and backprop
+  flips `reward -> 1 - reward` at every edge. A hand-built-tree test pins the sign
+  down, because a sign bug makes MCTS play to lose.
+* Every value is in **[0, 1]** (loss 0, draw 0.5, win 1; evaluations squashed with
+  `0.5 + 0.5*tanh(score/600)`), which is the range the UCT exploration constant
+  assumes.
+* The move is the **most-visited** root child. `nodes` = iterations completed,
+  `depth` = length of the most-visited line, `score` = the root value converted back
+  with the inverse squash and clamped to +/-5,000 so it never looks like a mate score.
+* Terminal detection at tree nodes uses the engine's `game_result` (including
+  repetition). Rollouts use `record_check=False`, so repetition and the
+  perpetual-check rule are not modelled inside them (see the `# NOTE:`).
+* No board copies: the search walks the real board and unwinds in a `finally`; a test
+  checks the FEN, hash and history length are unchanged after `choose_move`.
+
+Defaults: `iterations=1000`, `time_limit_ms=None`, `exploration=1.4`,
+`rollout_depth=30`, `evaluator="full"`, `capture_bias=0.0`. If both budgets are set
+the search stops at whichever comes first.
+
+### Acceptance
+
+MCTS vs random, 100 games, 200 iterations per move, seed 1, 8 workers:
+**100W 0D 0L (100%)** (target 95%), average game 96.5 plies, 84 checkmates and 16
+stalemates, 4:57 wall clock, no game reached the 300-ply cap.
+
+### Informational sweeps (10 games per arm: not a ranking)
+
+Against greedy, 8 workers, seed 1:
+
+| arm | W | D | L | win rate | iterations/s | avg depth | avg ms/move |
+|---|---|---|---|---|---|---|---|
+| 100 iterations | 1 | 1 | 8 | 10% | 552 | 1.47 | 181 |
+| 400 iterations | 4 | 1 | 5 | 40% | 536 | 1.62 | 747 |
+| 1600 iterations | 7 | 0 | 3 | 70% | 502 | 2.12 | 3186 |
+| c = 0.7, 400 iterations | 8 | 0 | 2 | 80% | 549 | 1.71 | 729 |
+| c = 1.4, 400 iterations | 4 | 1 | 5 | 40% | 557 | 1.62 | 718 |
+| c = 2.0, 400 iterations | 3 | 2 | 5 | 30% | 607 | 1.97 | 659 |
+
+The trend with iterations is monotone and the two 400-iteration runs are the same
+games, which confirms the seeded search is reproducible. The absolute level is the
+interesting part: at 100 iterations MCTS loses badly to a one-ply greedy bot, and even
+1600 iterations only reach depth ~2, because random 30-ply rollouts carry a weak
+signal. Ten games per arm cannot rank the settings, the defaults were chosen by
+reasoning, and M6 is where MCTS gets a real comparison.
+
 ## Tournament harness
 
 ```bash
@@ -492,7 +545,7 @@ become a cannon's screen), which is what took depth 4 from 23 s in M1 to 5 s.
 - ~~M2 baselines and match harness~~ (done)
 - ~~M3 alpha-beta~~ (done)
 - ~~M4 evaluation (material, piece-square tables, mobility, king safety)~~ (done)
-- M5 plain MCTS
+- ~~M5 plain MCTS~~ (done)
 - M6 experiments (depth scaling, heuristic comparison)
 - M7 replay viewer
 - M8 live play server and web UI
