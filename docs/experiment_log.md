@@ -52,6 +52,10 @@ Timing numbers are wall clock and therefore machine-dependent; node counts are n
 | History seeding of the search path | M3 | win rate vs greedy, 100 games | 95% (95W 0D 5L) | 99% (99W 0D 1L) | HELPED |
 | Alpha-beta vs greedy (acceptance) | M3 | win rate vs greedy | -- | 99% | INCONCLUSIVE |
 | Iterative deepening, 50 ms budget | M3 | returned depth and elapsed | -- | depth 2 in 50-67 ms | INCONCLUSIVE |
+| Piece-square tables | M4 | win rate vs material, 10 games | -- | 70% (7W 1D 2L) | INCONCLUSIVE |
+| Mobility + king safety (`full`) | M4 | win rate vs `material_pst`, 10 games | -- | 30% (3W 1D 6L) | INCONCLUSIVE |
+| Mobility + king safety (`full`) | M4 | evaluation cost | 4.10 us | 61.05 us | HURT |
+| Mobility + king safety (`full`) | M4 | search speed at depth 3 | 15,915 nodes/s | 7,948 nodes/s | HURT |
 
 ## Problem definition
 
@@ -463,3 +467,73 @@ of 3,056,865, and with a fixed 200 ms budget it completes depth 2-3 per move, at
   check granularity plus machine noise (LIKELY).
 - **Caveat:** no before/after; this is a correctness property, not a tweak.
 - **Verdict:** INCONCLUSIVE.
+
+---
+
+## 2026-11-23 -- Piece-square tables (M4)
+
+- **Commit/tag:** `m4-eval`.
+- **What changed:** added the `pst` feature (piece-square tables, Black's tables being
+  Red's flipped by rank) and the named evaluator `material_pst`.
+- **Setup:** alpha-beta at fixed depth 3, `material` vs `material_pst`, 10 games
+  (5 per colour), seed 1, 6-ply openings, 8 workers. Command: `python -m
+  harness.tournament --bot-a alphabeta --bot-a-params '{"depth": 3, "evaluator":
+  "material"}' --bot-b alphabeta --bot-b-params '{"depth": 3, "evaluator":
+  "material_pst"}' --games 10 --seed 1 --workers 8 --no-save`.
+- **Result:** `material_pst` **7W 1D 2L (70%)**, `material` 2W 1D 7L. Average game
+  84.6 plies; 140.6 ms per move; 1,514 nodes per move.
+- **Observation:** MEASURED: the PST side scored 70%, but with 10 games the 95%
+  confidence interval is roughly 35-93%, so this does not establish a ranking.
+  LIKELY: centralising horses and chariots and pushing soldiers helps at fixed depth,
+  because the search sees the extra space but the opponent's counterplay is still one
+  ply away.
+- **Caveat:** 10 games is too small to rank evaluators; M6 is where this gets a real
+  sample.
+- **Verdict:** INCONCLUSIVE.
+
+---
+
+## 2026-11-23 -- Mobility and king safety: the `full` evaluator (M4)
+
+- **Commit/tag:** `m4-eval`.
+- **What changed:** added the `mobility` (pseudo-legal move difference) and
+  `king_safety` (guards near the general, exposure penalties) features, giving the
+  named evaluator `full`.
+- **Setup:** alpha-beta at fixed depth 3, `material_pst` vs `full`, 10 games, seed 1,
+  6-ply openings, 8 workers. Same command with the two evaluator names swapped. A
+  third 10-game pairing, `material` vs `full`, was run for context.
+- **Result:** `material_pst` **6W 1D 3L** vs `full` 3W 1D 6L -- the full evaluator won
+  **30%**. In the third pairing `full` beat `material` **6W 0D 4L (60%)**. Average
+  129.8 plies and 136.7 ms per move in the PST/full match.
+- **Observation:** MEASURED: the three pairings are intransitive (PST > material,
+  full > material, PST > full), which is what 10-game noise looks like. The negative
+  direction for `full` is still worth noting. LIKELY: mobility double-counts material
+  -- more pieces simply move more -- so the term can reward keeping material over
+  making good trades, and flat guard bonuses in king safety may reward passivity.
+  Testing that needs a larger sample and an ablation of each feature.
+- **Caveat:** 10 games per pairing; fixed depth, so the extra evaluation cost does not
+  explain the result. Do not rank evaluators from this.
+- **Verdict:** INCONCLUSIVE.
+
+---
+
+## 2026-11-23 -- Evaluator cost table (M4)
+
+- **Commit/tag:** `m4-eval`.
+- **What changed:** no behaviour change; a measurement of what each evaluator costs.
+- **Setup:** `python -m tools.eval_cost --limit 5 --depth 3` (2,000 evaluation calls
+  per feature and evaluator, then a fixed-depth-3 search on five middlegame
+  positions).
+- **Result:** per evaluation: material **2.35 us**, pst **1.81 us**, mobility
+  **38.04 us**, king safety **15.84 us**, `material_pst` **4.10 us**,
+  `material_pst_mobility` **42.72 us**, `full` **61.05 us**. Search speed at depth 3:
+  material 16,782 nodes/s (87.7 ms per move), `material_pst` 15,915 (94.3 ms),
+  `material_pst_mobility` 9,335 (161.4 ms), `full` 7,948 (189.6 ms).
+- **Observation:** MEASURED: mobility dominates the cost (~38 us, because it counts
+  pseudo-legal moves for both sides), so `full` is about 2.2x slower per move than
+  material at the same depth. In a time-capped game that becomes fewer plies, which
+  the fixed-depth smoke matches deliberately do not capture.
+- **Caveat:** one machine; the ms-per-move figures include everything the search does
+  at that depth, so they show the end-to-end price, not the evaluation alone.
+- **Verdict:** HURT (cost only; strength is unresolved).
+

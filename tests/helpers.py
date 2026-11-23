@@ -10,7 +10,21 @@ from __future__ import annotations
 from pathlib import Path
 
 from engine.board import Board
-from engine.types import BOARD_FILES, BOARD_RANKS, FILE_LETTERS, Move
+from engine.types import (
+    BOARD_FILES,
+    BOARD_RANKS,
+    BOARD_SQUARES,
+    EMPTY,
+    FILE_LETTERS,
+    Color,
+    Move,
+    file_of,
+    make_piece,
+    piece_color,
+    piece_kind,
+    rank_of,
+    square,
+)
 
 # Fixed position sets live next to the tests; generate them with
 # ``python -m tools.make_positions``.
@@ -59,6 +73,35 @@ def find_move(board: Board, name: str) -> Move:
         if move.to_iccs() == name:
             return move
     raise AssertionError(f"{name} is not legal in {board.to_fen()}")
+
+
+def with_side_to_move(board: Board, color: Color) -> Board:
+    """A copy of ``board``'s placement with ``color`` to move (history dropped).
+
+    Used by the evaluation symmetry tests: the same position seen from each side.
+    """
+    fields = board.to_fen().split()
+    fields[1] = "w" if color is Color.RED else "b"
+    return Board.from_fen(" ".join(fields))
+
+
+def mirror_board(board: Board) -> Board:
+    """Flip the board vertically (rank r -> 9-r), swap colours, and swap the side to move.
+
+    This is the project's definition of "mirrored" (see AGENTS.md): the rank flip,
+    not a left-right flip, which is what makes Black's piece-square tables Red's
+    tables flipped by rank.
+    """
+    squares = [EMPTY] * BOARD_SQUARES
+    for square_index in range(BOARD_SQUARES):
+        code = board.piece_at(square_index)
+        if code == EMPTY:
+            continue
+        color = piece_color(code)
+        mirrored_color = Color.BLACK if color is Color.RED else Color.RED
+        mirrored_square = square(file_of(square_index), BOARD_RANKS - 1 - rank_of(square_index))
+        squares[mirrored_square] = make_piece(mirrored_color, piece_kind(code))
+    return Board(squares, board.side_to_move.opponent)
 
 
 def play(board: Board, names: str) -> None:

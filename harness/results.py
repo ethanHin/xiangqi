@@ -21,12 +21,21 @@ from harness.match import GameRecord
 
 @dataclass
 class SideScore:
-    """Wins, draws, and losses for one bot type."""
+    """Wins, draws, and losses for one bot configuration."""
 
     bot_type: str
+    params: dict[str, Any] = field(default_factory=dict)
     wins: int = 0
     draws: int = 0
     losses: int = 0
+
+    @property
+    def label(self) -> str:
+        """Bot type plus the params that identify it, e.g. ``alphabeta(evaluator=full)``."""
+        if not self.params:
+            return self.bot_type
+        inner = ", ".join(f"{key}={value}" for key, value in sorted(self.params.items()))
+        return f"{self.bot_type}({inner})"
 
     @property
     def games(self) -> int:
@@ -99,23 +108,39 @@ def summarize(records: Sequence[GameRecord]) -> Summary:
     return summary
 
 
-def score_for(records: Sequence[GameRecord], bot_type: str) -> SideScore:
-    """Wins/draws/losses for ``bot_type`` across games where it played one side.
+def score_for(
+    records: Sequence[GameRecord],
+    bot_type: str,
+    params: dict[str, Any] | None = None,
+) -> SideScore:
+    """Wins/draws/losses for one bot configuration across games where it played.
 
-    A game where the same type plays both sides (self-play) is skipped: the result
-    cannot be credited to one side of the same bot.
+    ``params`` narrows the match to one configuration of the bot type, for example
+    ``{"evaluator": "full"}`` -- that is how the M4/M6 comparisons rank two settings
+    of the same alphabetabot. A game where the same configuration plays both sides is
+    skipped, because its result cannot be credited to one of them.
     """
-    score = SideScore(bot_type=bot_type)
+    score = SideScore(bot_type=bot_type, params=dict(params or {}))
     for record in records:
-        red_type = record.red.get("type")
-        black_type = record.black.get("type")
-        if red_type == bot_type and black_type == bot_type:
+        red_match = _matches(record.red, bot_type, params)
+        black_match = _matches(record.black, bot_type, params)
+        if red_match and black_match:
             continue
-        if red_type == bot_type:
+        if red_match:
             _apply(score, record, as_red=True)
-        elif black_type == bot_type:
+        elif black_match:
             _apply(score, record, as_red=False)
     return score
+
+
+def _matches(spec: dict[str, Any], bot_type: str, params: dict[str, Any] | None) -> bool:
+    """True if a player spec is ``bot_type`` with every parameter in ``params``."""
+    if spec.get("type") != bot_type:
+        return False
+    if not params:
+        return True
+    spec_params = spec.get("params") or {}
+    return all(spec_params.get(key) == value for key, value in params.items())
 
 
 def format_summary(summary: Summary, scores: Sequence[SideScore], title: str) -> str:
@@ -136,7 +161,7 @@ def format_summary(summary: Summary, scores: Sequence[SideScore], title: str) ->
         if not score.games:
             continue
         lines.append(
-            f"{score.bot_type:>10}: {score.wins}W {score.draws}D {score.losses}L "
+            f"{score.label:>10}: {score.wins}W {score.draws}D {score.losses}L "
             f"of {score.games}   win rate {score.win_rate:.1%}   "
             f"score {score.score_rate:.1%}"
         )

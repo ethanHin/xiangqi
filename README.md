@@ -4,8 +4,8 @@ A Xiangqi (Chinese Chess) engine, several search bots, a match harness, an
 experiment suite, and a local web app for human-vs-bot and bot-vs-bot play with
 replay.
 
-**Status: M1 (engine core), M2 (baselines and match harness), and M3 (alpha-beta)
-complete.** Later milestones (evaluation, MCTS, experiments, server, web UI) are
+**Status: M1 (engine core), M2 (baselines and match harness), M3 (alpha-beta) and M4
+(evaluation) complete.** Later milestones (MCTS, experiments, server, web UI) are
 described in `AGENTS.md`.
 
 ## Quick start
@@ -40,8 +40,11 @@ bots/              # one class per algorithm, all behind bots.base.Bot
   greedy_bot.py
   alphabeta.py     # iterative-deepening alpha-beta, reference minimax, node counts
 eval/              # evaluation features
-  material.py      # piece values shared by greedy and the evaluator
-  evaluator.py     # named evaluators ("material"; M4 adds the rest)
+  material.py      # piece values, crossed-soldier bonus, material balance
+  pst.py           # piece-square tables, mirrored for Black by flipping ranks
+  mobility.py      # difference in pseudo-legal move counts
+  king_safety.py   # advisors/elephants near the general, exposure penalties
+  evaluator.py     # weighted combination; named evaluators for the bot registry
 harness/           # play games and count the results
   match.py         # one game -> Game JSON record
   tournament.py    # N games, colour-swapped, optionally in parallel processes
@@ -221,6 +224,53 @@ for the acceptance match the average is 201 ms per move, p95 226 ms.
   averaged 2,291 nodes and depth 2.59 per move, with 1,070 of its 2,116 moves
   completing depth 3 or more; iterative deepening stops early when it proves a mate.
 
+## Evaluation (M4)
+
+Four features, each in its own module, each returning centipawns **for the side to
+move** (negamax-compatible), combined by `eval/evaluator.py` with configurable
+weights:
+
+| feature | module | what it measures |
+|---|---|---|
+| material | `eval/material.py` | piece values; a soldier is worth 200 instead of 100 once it crosses the river |
+| pst | `eval/pst.py` | where each piece stands: soldiers advance, horses centralise, chariots take central files, advisors/elephants stay home, the general stays back |
+| mobility | `eval/mobility.py` | pseudo-legal move difference (own minus opponent) |
+| king safety | `eval/king_safety.py` | advisors and elephants near the general, penalties for a bare or forward general |
+
+Black's piece-square tables are Red's tables **flipped by rank** (`r -> 9-r`), which
+is also the project's definition of "mirrored". The named evaluators add one feature
+at a time, matching the M6 comparison: `material`, `material_pst`,
+`material_pst_mobility`, `full`. `TEMPO_BONUS` exists as a named constant and is 0,
+because the acceptance rule requires the start position to evaluate to exactly 0.
+
+Acceptance properties, tested over real middlegame positions rather than hand-picked
+ones:
+
+* the same position from Red's view and from Black's view gives exact negatives;
+* a mirrored + colour-swapped position with the side to move swapped scores
+  identically;
+* the start position scores 0 for every evaluator.
+
+### What the evaluators cost
+
+`python -m tools.eval_cost` measures the features and the search at fixed depth 3 on
+five middlegame positions:
+
+| evaluator | us per eval | nodes/s | ms per move at depth 3 |
+|---|---|---|---|
+| material | 2.35 | 16,782 | 87.7 |
+| material_pst | 4.10 | 15,915 | 94.3 |
+| material_pst_mobility | 42.72 | 9,335 | 161.4 |
+| full | 61.05 | 7,948 | 189.6 |
+
+Mobility dominates the cost (about 38 us per call: it counts pseudo-legal moves for
+both sides), so `full` is roughly twice as slow per move as material at the same
+depth. Whether the extra features are *worth* that has not been established: the
+10-game smoke matches are too small to rank evaluators, and they disagreed with each
+other (PST beat material 7-2, `full` beat material 6-4, but PST beat `full` 6-3).
+Recorded as inconclusive in `docs/experiment_log.md`; M6 is where this gets a real
+sample.
+
 ## Tournament harness
 
 ```bash
@@ -281,7 +331,7 @@ become a cannon's screen), which is what took depth 4 from 23 s in M1 to 5 s.
 
 - ~~M2 baselines and match harness~~ (done)
 - ~~M3 alpha-beta~~ (done)
-- M4 evaluation (material, piece-square tables, mobility, king safety)
+- ~~M4 evaluation (material, piece-square tables, mobility, king safety)~~ (done)
 - M5 plain MCTS
 - M6 experiments (depth scaling, heuristic comparison)
 - M7 replay viewer

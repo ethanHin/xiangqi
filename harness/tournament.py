@@ -183,9 +183,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             save_game(record, args.save_dir)
 
     summary = summarize(records)
-    scores: list[SideScore] = [score_for(records, args.bot_a)]
-    if args.bot_b != args.bot_a:
-        scores.append(score_for(records, args.bot_b))
+    scores: list[SideScore] = [score_for(records, args.bot_a, bot_a["params"])]
+    if bot_a != bot_b:
+        scores.append(score_for(records, args.bot_b, bot_b["params"]))
     print(
         format_summary(
             summary,

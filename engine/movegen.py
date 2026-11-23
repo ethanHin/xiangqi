@@ -356,6 +356,43 @@ def _is_legal(board: Board, move: Move, color: Color) -> bool:
         board.unmake_move()
 
 
+def count_pseudo_legal_moves(board: Board, color: Color) -> int:
+    """Count ``color``'s pseudo-legal moves without building ``Move`` objects.
+
+    Used by the mobility evaluator, which runs at every leaf of the search: building
+    ~40 ``Move`` objects twice per leaf costs more than the rest of the evaluation.
+    The movement rules mirror ``generate_pseudo_legal_moves``; the test
+    ``test_count_pseudo_legal_moves_matches_the_generator`` checks that the two agree
+    on random positions, the same "fast beside slow" rule the perft code follows.
+    """
+    squares = board.squares
+    count = 0
+    for origin in range(BOARD_SQUARES):
+        code = squares[origin]
+        if code == EMPTY or piece_color(code) is not color:
+            continue
+        kind = piece_kind(code)
+        if kind is PieceKind.CHARIOT:
+            count += _count_slider_moves(squares, origin, color)
+        elif kind is PieceKind.CANNON:
+            count += _count_cannon_moves(squares, origin, color)
+        elif kind is PieceKind.HORSE:
+            for target, leg in HORSE_TARGETS[origin]:
+                if squares[leg] == EMPTY and _not_own(squares[target], color):
+                    count += 1
+        elif kind is PieceKind.ELEPHANT:
+            for target, eye in ELEPHANT_TARGETS[color][origin]:
+                if squares[eye] == EMPTY and _not_own(squares[target], color):
+                    count += 1
+        elif kind is PieceKind.SOLDIER:
+            count += _count_steps(squares, SOLDIER_TARGETS[color][origin], color)
+        elif kind is PieceKind.ADVISOR:
+            count += _count_steps(squares, ADVISOR_TARGETS[color][origin], color)
+        else:  # GENERAL
+            count += _count_steps(squares, GENERAL_TARGETS[color][origin], color)
+    return count
+
+
 def perft(board: Board, depth: int) -> int:
     """Count leaf nodes of the legal move tree to ``depth`` (reference depths in tests).
 
@@ -376,6 +413,63 @@ def perft(board: Board, depth: int) -> int:
 # ---------------------------------------------------------------------------
 # Private helpers
 # ---------------------------------------------------------------------------
+
+
+def _not_own(code: int, color: Color) -> bool:
+    """True if ``code`` is empty or belongs to the opponent."""
+    return code == EMPTY or piece_color(code) is not color
+
+
+def _count_steps(squares: list[int], targets: list[int], color: Color) -> int:
+    """Count single-step destinations not occupied by ``color``."""
+    return sum(1 for target in targets if _not_own(squares[target], color))
+
+
+def _count_slider_moves(squares: list[int], origin: int, color: Color) -> int:
+    """Count chariot moves along the four rays."""
+    count = 0
+    file, rank = file_of(origin), rank_of(origin)
+    for df, dr in ORTHOGONAL_STEPS:
+        target_file, target_rank = file + df, rank + dr
+        while _inside(target_file, target_rank):
+            target = square(target_file, target_rank)
+            code = squares[target]
+            if code != EMPTY:
+                if piece_color(code) is not color:
+                    count += 1
+                break
+            count += 1
+            target_file += df
+            target_rank += dr
+    return count
+
+
+def _count_cannon_moves(squares: list[int], origin: int, color: Color) -> int:
+    """Count cannon moves: quiet squares before the screen, then at most one capture."""
+    count = 0
+    file, rank = file_of(origin), rank_of(origin)
+    for df, dr in ORTHOGONAL_STEPS:
+        target_file, target_rank = file + df, rank + dr
+        while (
+            _inside(target_file, target_rank) and squares[square(target_file, target_rank)] == EMPTY
+        ):
+            count += 1
+            target_file += df
+            target_rank += dr
+        if not _inside(target_file, target_rank):
+            continue
+        # The screen is here; the next piece on the ray is capturable if it is an enemy.
+        target_file += df
+        target_rank += dr
+        while _inside(target_file, target_rank):
+            code = squares[square(target_file, target_rank)]
+            if code != EMPTY:
+                if piece_color(code) is not color:
+                    count += 1
+                break
+            target_file += df
+            target_rank += dr
+    return count
 
 
 def _append_if_not_own(

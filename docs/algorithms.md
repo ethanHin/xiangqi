@@ -8,6 +8,7 @@ for the first time. Each section points at the file that implements it.
 - [Iterative deepening and the clock](#iterative-deepening-and-the-clock)
 - [Transposition table](#transposition-table)
 - [Quiescence](#quiescence)
+- [Evaluation](#evaluation)
 - [MCTS](#mcts)
 
 ## Alpha-beta
@@ -134,6 +135,51 @@ searching captures at the horizon until the position is quiet.
 
 Because it only looks at captures, quiescence changes nothing on positions where no
 capture exists; `tests/positions_quiet.txt` is the set that proves it.
+
+## Evaluation
+
+**Files:** `eval/material.py`, `eval/pst.py`, `eval/mobility.py`,
+`eval/king_safety.py`, combined in `eval/evaluator.py`.
+
+Every feature returns **centipawns from the side to move's point of view**: positive
+means the side to move is better. That is the sign convention negamax needs, because
+a child's value is negated on the way back up. Because every feature uses the same
+convention, the evaluator is a weighted sum:
+
+```
+score = w_material * material + w_pst * pst + w_mobility * mobility + w_safety * king_safety
+```
+
+**Material** is the piece values (chariot 900, cannon 450, horse 400, advisor 200,
+elephant 200, soldier 100, or 200 once it has crossed the river). It is implemented
+as a flat table of *signed* values indexed by `piece_code * 90 + square`, so a leaf
+costs one add per occupied square: about 2.4 microseconds. Material has to dominate
+every other term; the positional features are worth tens of centipawns.
+
+**Piece-square tables** add a small bonus for a piece's square: soldiers are worth
+more as they advance, horses prefer the centre (more destinations, fewer blocked
+legs), chariots take central files, advisors and elephants prefer their home points,
+and the general prefers the back rank. Red's tables are written bottom-up, 10 rows of
+9. Black's tables are Red's **flipped by rank** (`r -> 9-r`). That mirror is what
+makes the symmetry acceptance test work even for tables that are not left-right
+symmetric: after a vertical flip and a colour swap, every piece sits on the
+corresponding square of the other colour's table.
+
+**Mobility** is the difference in pseudo-legal move counts. Pseudo-legal (rather than
+legal) counts keep the cost down: it is already the most expensive feature at ~38
+microseconds per evaluation, because it counts moves for both sides. The count is a
+measure of freedom, not of legal options.
+
+**King safety** rewards the general's armour: advisors and elephants still on the
+board, more so when they are near the general, with penalties for a missing advisor,
+a missing elephant, both missing, or a general standing on the palace's forward rank.
+All constants are named and live next to the code.
+
+The named evaluators add one feature at a time -- `material`, `material_pst`,
+`material_pst_mobility`, `full` -- so the M6 comparison can attribute a difference to
+one feature. Weights live in `DEFAULT_WEIGHTS` and can be overridden per evaluator;
+`TEMPO_BONUS` is a named constant left at 0 so the start position still evaluates to
+0.
 
 ## MCTS
 
