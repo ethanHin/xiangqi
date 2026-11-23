@@ -31,6 +31,10 @@ Unless stated otherwise, all runs are on this machine with Python 3.11+ (the ven
 interpreter), `pytest` for tests, and the random opening applied from the run's seed.
 Timing numbers are wall clock and therefore machine-dependent; node counts are not.
 
+**Environment for every entry below:** Windows 11 (10.0.26200), CPython **3.15.0** in
+`.venv`, 16 logical CPUs, single local machine. Recorded because wall-clock numbers
+are not comparable across machines; node counts and W/D/L are.
+
 ## Summary
 
 | tweak | milestone | metric measured | before | after | verdict |
