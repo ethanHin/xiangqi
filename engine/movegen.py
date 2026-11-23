@@ -235,17 +235,125 @@ def generate_pseudo_legal_moves(board: Board, color: Color | None = None) -> lis
 def generate_legal_moves(board: Board) -> list[Move]:
     """Legal moves for the side to move: pseudo-legal moves that keep the general safe.
 
-    The legality test is "play it, check my general, undo it". This covers
-    self-check, pinned pieces, and the flying-general rule in one place.
+    Naively that means "play it, check my general, undo it" for every move, which is
+    the dominant cost of the search. Two observations make it much cheaper:
+
+    * if the mover is in check, every move really does have to be verified;
+    * otherwise only a move by the general or by a *pinned* piece can expose the
+      general, so everything else is legal by construction.
+
+    ``pinned_squares`` finds the pinned pieces with four ray scans from the general,
+    replacing roughly forty attack scans per node with four.
     """
-    mover = board.side_to_move
+    color = board.side_to_move
+    pseudo = generate_pseudo_legal_moves(board, color)
+
+    if board.is_in_check(color):
+        # In check: a move may only stand if it resolves the check.
+        return _filter_illegal(board, pseudo, color)
+
+    pinned, cannon_danger = guard_squares(board, color)
     legal: list[Move] = []
-    for move in generate_pseudo_legal_moves(board, mover):
-        board.make_move(move, record_check=False)
-        if not board.is_in_check(mover):
+    for move in pseudo:
+        if (
+            move.from_square in pinned
+            or move.to_square in cannon_danger
+            or piece_kind(board.squares[move.from_square]) is PieceKind.GENERAL
+        ):
+            if _is_legal(board, move, color):
+                legal.append(move)
+        else:
             legal.append(move)
-        board.unmake_move()
     return legal
+
+
+def guard_squares(board: Board, color: Color) -> tuple[set[int], set[int]]:
+    """Find the ways a move by a piece other than the general could still expose it.
+
+    Returns ``(pinned, cannon_danger)``. Both come from walking the four orthogonal
+    rays out from the general and looking at the first three pieces on each ray,
+    which is why a node costs four scans instead of one scan per candidate move.
+
+    * ``pinned``: pieces that must not leave their line, either because an enemy
+      chariot (or the enemy general on a file -- the flying-general rule) is directly
+      behind them, or because an enemy cannon has exactly two pieces between it and
+      the general: moving either one would leave exactly one screen and give check.
+    * ``cannon_danger``: empty squares between the general and an enemy cannon that
+      has a clear line. A cannon needs exactly one screen, so moving a piece *onto*
+      one of those squares would create the screen and expose the general.
+    """
+    general = board.general_square(color)
+    if general < 0:
+        return set(), set()
+    squares = board.squares
+    file, rank = file_of(general), rank_of(general)
+    pinned: set[int] = set()
+    cannon_danger: set[int] = set()
+
+    for df, dr in ORTHOGONAL_STEPS:
+        pieces: list[tuple[int, int]] = []  # (square, code), nearest to the general first
+        empty_squares: list[int] = []  # empty squares before the first piece
+        target_file, target_rank = file + df, rank + dr
+        while _inside(target_file, target_rank) and len(pieces) < 3:
+            target = square(target_file, target_rank)
+            code = squares[target]
+            if code == EMPTY:
+                if not pieces:
+                    empty_squares.append(target)
+            else:
+                pieces.append((target, code))
+            target_file += df
+            target_rank += dr
+        if not pieces:
+            continue
+
+        first_square, first_code = pieces[0]
+        if piece_color(first_code) is not color:
+            # An enemy piece closest to the general. A cannon here has no screen yet,
+            # so the gap between it and the general is a trap: a piece landing there
+            # becomes the screen. (A chariot or general here would be check, which
+            # the caller handles before calling this function.)
+            if piece_kind(first_code) is PieceKind.CANNON:
+                cannon_danger.update(empty_squares)
+            continue
+
+        # The closest piece is ours. What sits behind it decides whether it may move.
+        if len(pieces) >= 2:
+            second_code = pieces[1][1]
+            if piece_color(second_code) is not color:
+                second_kind = piece_kind(second_code)
+                if second_kind is PieceKind.CHARIOT or (
+                    second_kind is PieceKind.GENERAL and df == 0
+                ):
+                    pinned.add(first_square)
+
+        # Enemy cannon with exactly two pieces in between: both are screens, and
+        # removing either one leaves a single screen -- check. Pin the friendly ones.
+        if len(pieces) >= 3:
+            third_code = pieces[2][1]
+            if piece_color(third_code) is not color and piece_kind(third_code) is PieceKind.CANNON:
+                for square_index, code in pieces[:2]:
+                    if piece_color(code) is color:
+                        pinned.add(square_index)
+    return pinned, cannon_danger
+
+
+def _filter_illegal(board: Board, moves: list[Move], color: Color) -> list[Move]:
+    """Keep only the moves that leave ``color``'s general unattacked."""
+    legal: list[Move] = []
+    for move in moves:
+        if _is_legal(board, move, color):
+            legal.append(move)
+    return legal
+
+
+def _is_legal(board: Board, move: Move, color: Color) -> bool:
+    """Play ``move``, ask whether ``color``'s general is attacked, and undo."""
+    board.make_move(move, record_check=False)
+    try:
+        return not board.is_in_check(color)
+    finally:
+        board.unmake_move()
 
 
 def perft(board: Board, depth: int) -> int:

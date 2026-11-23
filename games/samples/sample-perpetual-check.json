@@ -14,35 +14,35 @@
   "moves": [
     {
       "move": "d2e2",
-      "time_ms": 0.13,
+      "time_ms": 0.07,
       "nodes": 0,
       "depth": 0,
       "eval": 0
     },
     {
       "move": "e9d9",
-      "time_ms": 0.02,
+      "time_ms": 0.04,
       "nodes": 0,
       "depth": 0,
       "eval": 0
     },
     {
       "move": "e2d2",
-      "time_ms": 0.13,
+      "time_ms": 0.08,
       "nodes": 0,
       "depth": 0,
       "eval": 0
     },
     {
       "move": "d9e9",
-      "time_ms": 0.02,
+      "time_ms": 0.03,
       "nodes": 0,
       "depth": 0,
       "eval": 0
     },
     {
       "move": "d2e2",
-      "time_ms": 0.12,
+      "time_ms": 0.04,
       "nodes": 0,
       "depth": 0,
       "eval": 0
@@ -56,7 +56,7 @@
     },
     {
       "move": "e2d2",
-      "time_ms": 0.12,
+      "time_ms": 0.04,
       "nodes": 0,
       "depth": 0,
       "eval": 0

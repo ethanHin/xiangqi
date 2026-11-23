@@ -4,8 +4,8 @@ A Xiangqi (Chinese Chess) engine, several search bots, a match harness, an
 experiment suite, and a local web app for human-vs-bot and bot-vs-bot play with
 replay.
 
-**Status: M1 (engine core) and M2 (baselines and match harness) complete.**
-Later milestones (alpha-beta, evaluation, MCTS, experiments, server, web UI) are
+**Status: M1 (engine core), M2 (baselines and match harness), and M3 (alpha-beta)
+complete.** Later milestones (evaluation, MCTS, experiments, server, web UI) are
 described in `AGENTS.md`.
 
 ## Quick start
@@ -35,19 +35,28 @@ engine/            # the project's bottom layer, no dependencies above it
   movegen.py       # pseudo-legal + legal move generation, perft
   rules.py         # terminal detection: mate, stalemate, repetition, move cap
 bots/              # one class per algorithm, all behind bots.base.Bot
-  base.py          # Bot interface, Budget, SearchResult, build_bot
+  base.py          # Bot interface, Budget, SearchResult, build_bot, BOT_DEFAULTS
   random_bot.py
   greedy_bot.py
+  alphabeta.py     # iterative-deepening alpha-beta, reference minimax, node counts
 eval/              # evaluation features
-  material.py      # piece values shared by greedy (M2) and the evaluator (M4)
+  material.py      # piece values shared by greedy and the evaluator
+  evaluator.py     # named evaluators ("material"; M4 adds the rest)
 harness/           # play games and count the results
   match.py         # one game -> Game JSON record
   tournament.py    # N games, colour-swapped, optionally in parallel processes
   results.py       # win/draw/loss, averages, CSV rows
-tools/             # developer scripts (sample-game generator)
-tests/             # pytest suite
+tools/             # developer scripts
+  make_positions.py  # regenerate the fixed test position sets
+  make_samples.py    # regenerate games/samples
+  search_stats.py    # node-count table for each M3 enhancement
+tests/             # pytest suite, including the fixed position sets
+  positions_middlegame.txt
+  positions_transpositions.txt
+  positions_quiet.txt
 games/             # saved game JSON (only samples/ is committed)
   samples/
+docs/              # algorithms.md: how the search works, in plain language
 ```
 
 How one game runs:
@@ -75,8 +84,10 @@ writes the trailer as `- - 0 1` because Xiangqi has no castling, en passant, or
 **`make_move` is not a legality check.** It asserts pseudo-legality only: a piece
 of the side to move is on the origin square and `move.captured` matches the
 destination. Two callers filter legality themselves: `movegen.generate_legal_moves`
-("play it, is my general safe, undo it") and the server, via `board.legal_moves()`.
-This keeps the search hot loop free of redundant work.
+and the server, via `board.legal_moves()`. Legal move generation is two-tier: in
+check, every move is played and tested; otherwise only moves that could expose the
+general are tested (the general's own moves, pinned pieces, and moves that would
+become a cannon's screen), which is what makes the search affordable.
 
 **`make_move(move, record_check=False)`** skips storing whether the move gave
 check. Game loops keep the default `True` because the perpetual-check rule needs
@@ -123,16 +134,92 @@ server and the Game JSON use.
 | type | what it does |
 |---|---|
 | `random` | uniform random legal move, seeded |
-| `greedy` | one-ply material: biggest capture, MVV-LVA tie-break, mate-in-1 detection |
+| `greedy` | one-ply material with mate-in-one detection |
+| `alphabeta` | iterative-deepening alpha-beta; params `depth`, `time_limit_ms`, `evaluator`, `quiescence` |
 
-`greedy` is the M2 yardstick for alpha-beta. Two details worth knowing:
+`greedy` is the M2 yardstick for alpha-beta. How it picks a move, in order:
 
-* Ties are broken with a seeded RNG. Picking a fixed move from generator order
-  makes the bot shuffle between the same squares and draws every game by
-  repetition, which would make the baseline useless.
-* It also takes mate in one. Only checking moves can mate, so the test runs on a
-  handful of moves per position. Without it, greedy wins material but random-walks
-  instead of converting, and about one game in eight hits the 300-ply cap.
+1. Score every legal move by the material it captures (a crossed-river soldier
+   counts 200). The biggest capture wins.
+2. Between equal-value captures, prefer the cheapest attacker (MVV-LVA): the horse
+   takes the cannon and the chariot stays alive.
+3. If a candidate gives mate in one, play it. Only checking moves can mate, so the
+   expensive test runs on a handful of moves per position.
+4. Otherwise pick at random among the tied candidates with the seeded RNG.
+
+Steps 2-4 are not decoration. With a fixed tie-break ("first legal move") the bot
+shuffles between the same two squares and drew 10 of 10 games by repetition;
+MVV-LVA took it to 95% wins against random, and mate detection to 98%.
+
+## Search: alpha-beta (M3)
+
+`bots/alphabeta.py` follows the order AGENTS.md builds it in: plain minimax
+(`reference_minimax`, kept as the test oracle), alpha-beta, move ordering, iterative
+deepening, a transposition table, and quiescence behind a flag. `docs/algorithms.md`
+walks through each part.
+
+Three rules live inside the search:
+
+* **No legal moves is a loss** for the side to move -- checkmate and stalemate
+  alike (Xiangqi has no drawn stalemate) -- scored `-MATE_SCORE + ply`, so a
+  faster mate outscores a slower one.
+* **A repeated position scores 0.** The bot seeds the search path with the game's
+  own history, so a depth-3 search cannot walk into a four-ply repetition it cannot
+  see. The perpetual-check *loss* is deliberately not modelled inside the search;
+  see the `# NOTE:` in `negamax`. `engine/rules.py` still adjudicates it, so the
+  search may treat a line as a draw that the game scores as a loss.
+* **Path-dependent scores never enter the transposition table.** A subtree that
+  scored a repetition marks itself, and every node above it skips the store.
+
+The clock is read every `CLOCK_CHECK_INTERVAL = 256` nodes rather than every node.
+At roughly 12k nodes/s a node costs ~85 us, so 256 nodes bounds the overshoot to
+about 25 ms; checking every node would add a call per node for no benefit.
+
+### Measured node counts (`python -m tools.search_stats`)
+
+Middlegame set, 50 positions, depth 3. The "same value" column compares every
+configuration against plain minimax -- node counts alone would be meaningless if
+the scores changed.
+
+| configuration | total nodes | avg nodes | time | same value |
+|---|---|---|---|---|
+| plain minimax (reference) | 3,056,865 | 61,137 | 212.4 s | -- |
+| alpha-beta | 430,538 | 8,611 | 29.6 s | yes |
+| + move ordering | 84,905 | 1,698 | 6.0 s | yes |
+| + ordering + transposition table | 84,905 | 1,698 | 6.0 s | yes |
+| + ordering + TT + quiescence | 194,497 | 3,890 | 13.1 s | no (expected: quiescence changes leaf values) |
+
+At depth 3 the table finds nothing to reuse in middlegame positions: two different
+three-ply orders almost never land on the same position with the same remaining
+depth. At depth 4 on five of the same positions it removes 7.6% of the nodes
+(26,652 -> 24,617) for identical values. Sparse endgames are where transpositions
+live, which is what the second set is for (10 positions, depth 4):
+
+| configuration | total nodes | avg nodes |
+|---|---|---|
+| alpha-beta | 17,842 | 1,784 |
+| + ordering | 10,260 | 1,026 |
+| + ordering + TT | 8,476 | 848 |
+
+Quiescence is judged by stability, not node count: on the six no-capture positions
+in `tests/positions_quiet.txt`, values with and without quiescence are identical at
+depth 3.
+
+### Iterative deepening
+
+The reported result is always the last *completed* depth. With a 50 ms budget on
+the start position the bot returns in 50-67 ms having completed depth 2 (the
+repetition test for this is in `tests/test_alphabeta.py`). At the 200 ms cap used
+for the acceptance match the average is 201 ms per move, p95 226 ms.
+
+### Acceptance
+
+* 50 middlegame positions at depth 3: identical root value to plain minimax on all
+  50, with fewer nodes (`pytest -m slow -k fifty_positions`).
+* Alpha-beta vs greedy, 100 games, 200 ms cap, 8 workers: **99W 0D 1L (99%)**,
+  average game 47.8 plies, endings 86 checkmate and 14 stalemate (a win). Alpha-beta
+  averaged 2,291 nodes and depth 2.59 per move, with 1,070 of its 2,116 moves
+  completing depth 3 or more; iterative deepening stops early when it proves a mate.
 
 ## Tournament harness
 
@@ -149,15 +236,14 @@ python -m harness.tournament --bot-a greedy --bot-b random --games 100 --workers
 * Every game is written to `games/<id>.json` unless `--no-save` is given.
 * `--workers` defaults to one process per game, capped at the CPU count.
 
-Measured acceptance run (100 games, seed 1, 6-ply openings, 8 workers, about
-1.1 s wall clock):
+Measured acceptance run (100 games, seed 1, 6-ply openings, 8 workers):
 
 | bot | W | D | L | win rate | score |
 |---|---|---|---|---|---|
 | greedy | 98 | 2 | 0 | 98% | 99% |
 | random | 0 | 2 | 98 | 0% | 1% |
 
-Average game length 101.1 plies; average move 0.41 ms; 84 checkmates, 14
+Average game length 101.3 plies; average move 0.27 ms; 84 checkmates, 14
 stalemates (also a win), 2 move-cap draws. Reproduce with
 `pytest -m slow -k greedy_beats_random`, or run the CLI above.
 
@@ -181,17 +267,20 @@ Reference node counts from the standard starting position:
 | depth | nodes   | time      |
 |-------|---------|-----------|
 | 1     | 44      | < 0.01 s  |
-| 2     | 1,920   | 0.01 s    |
-| 3     | 79,666  | 0.50 s    |
-| 4     | 3,290,240 | 22.9 s  |
+| 2     | 1,920   | < 0.01 s  |
+| 3     | 79,666  | 0.11 s    |
+| 4     | 3,290,240 | 5.0 s   |
 
 Depth 4 runs behind `pytest -m slow`. The expected values are published Xiangqi
 perft numbers; if the engine ever disagrees, the engine is fixed, never the table.
+The move generator only re-tests legality for moves that can actually expose the
+general (moves by a pinned piece, by the general, or onto a line where a piece would
+become a cannon's screen), which is what took depth 4 from 23 s in M1 to 5 s.
 
 ## Roadmap
 
 - ~~M2 baselines and match harness~~ (done)
-- M3 alpha-beta (minimax → alpha-beta → ordering → iterative deepening → TT → quiescence)
+- ~~M3 alpha-beta~~ (done)
 - M4 evaluation (material, piece-square tables, mobility, king safety)
 - M5 plain MCTS
 - M6 experiments (depth scaling, heuristic comparison)

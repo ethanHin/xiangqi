@@ -85,18 +85,30 @@ class Bot(ABC):
         return f"{type(self).__name__}({self.params})"
 
 
-# Bot types that ``build_bot`` knows about. ``human`` is deliberately absent: a
-# human is a player in the server, not a bot.
-BOT_TYPES: tuple[str, ...] = ("random", "greedy")
+# Bot types that ``build_bot`` knows about, with the parameters each one accepts.
+# This is the seed of the M8 server registry: the UI will render these defaults.
+# ``human`` is deliberately absent: a human is a player in the server, not a bot.
+BOT_DEFAULTS: dict[str, dict[str, Any]] = {
+    "random": {},
+    "greedy": {},
+    "alphabeta": {
+        "depth": None,  # None = time-only; iterative deepening stops on time
+        "time_limit_ms": 2000.0,
+        "evaluator": "material",
+        "quiescence": False,
+    },
+}
+
+BOT_TYPES: tuple[str, ...] = tuple(BOT_DEFAULTS)
 
 
 def build_bot(spec: Mapping[str, Any], seed: int | None = None) -> Bot:
     """Build a bot from a player spec.
 
     ``spec`` is ``{"type": "random", "params": {...}}``. ``seed`` seeds any
-    randomness the bot uses (the random bot); it is separate from ``params`` so
-    the harness can make every game reproducible without changing the bot's
-    serialised spec.
+    randomness the bot uses (the random and greedy bots); it is separate from
+    ``params`` so the harness can make every game reproducible without changing the
+    bot's serialised spec.
 
     Imports are done inside the function so that bot modules can import
     ``bots.base`` without a cycle.
@@ -112,6 +124,10 @@ def build_bot(spec: Mapping[str, Any], seed: int | None = None) -> Bot:
         from bots.greedy_bot import GreedyBot
 
         return GreedyBot(seed=seed, **params)
+    if bot_type == "alphabeta":
+        from bots.alphabeta import AlphaBetaBot
+
+        return AlphaBetaBot(**params)
     if bot_type == "human":
         raise ValueError("'human' is a player, not a bot; the server handles human moves")
     raise ValueError(f"unknown bot type {bot_type!r}; known types: {', '.join(BOT_TYPES)}")

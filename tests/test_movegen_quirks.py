@@ -8,10 +8,12 @@ legality tests use ``board.legal_moves()``.
 
 from __future__ import annotations
 
-from helpers import board_from, move_names
+import random
 
 from engine import movegen
+from engine.board import Board
 from engine.types import Move
+from tests.helpers import board_from, move_names
 
 
 def pseudo_legal(pieces: dict[str, str], side: str = "w") -> set[str]:
@@ -165,3 +167,53 @@ def test_is_in_check_detects_horse_and_soldier() -> None:
 def test_move_objects_compare_by_value() -> None:
     assert Move.from_iccs("h2e2") == Move(25, 22)
     assert len({Move.from_iccs("h2e2"), Move(25, 22)}) == 1
+
+
+# ---------------------------------------------------------------------------
+# The optimized legality filter must equal the naive one
+# ---------------------------------------------------------------------------
+
+
+def test_fast_legal_moves_equal_the_naive_filter_on_random_positions() -> None:
+    """The pin/screen shortcut in generate_legal_moves must not change the move set.
+
+    The fast generator only fully tests moves that could expose the general; the
+    naive filter tests every move. Random playouts reach the awkward cases (pins,
+    cannon screens, flying general) often enough to catch a shortcut that is too
+    aggressive.
+    """
+    rng = random.Random(424242)
+    board = Board.start()
+    positions_checked = 0
+    for _ in range(80):
+        color = board.side_to_move
+        naive = [
+            move
+            for move in movegen.generate_pseudo_legal_moves(board, color)
+            if movegen._is_legal(board, move, color)
+        ]
+        assert move_names(board.legal_moves()) == move_names(naive), board.to_fen()
+        positions_checked += 1
+        legal = board.legal_moves()
+        if not legal:
+            break
+        board.make_move(rng.choice(legal))
+    assert positions_checked > 40
+
+
+def test_moving_a_piece_onto_a_cannon_line_is_illegal() -> None:
+    # The black cannon on e9 has a clear line to the general on e0, so it has no
+    # screen and does not check. Landing the chariot on e3 would *become* its
+    # screen, so every move onto the e-file between them is illegal.
+    moves = legal({"e0": "K", "d9": "k", "e9": "c", "a3": "R"})
+    assert "a3e3" not in moves
+    assert "a3a4" in moves
+
+
+def test_moving_away_one_of_two_cannon_screens_is_illegal() -> None:
+    # Two Red soldiers sit between the black cannon on e9 and the general on e0, so
+    # there is no check. Taking one off the file would leave exactly one screen and
+    # give check; sliding it along the file keeps both screens and is legal.
+    moves = legal({"e0": "K", "d9": "k", "e9": "c", "e3": "P", "e5": "P"})
+    assert "e3d3" not in moves
+    assert "e3e4" in moves

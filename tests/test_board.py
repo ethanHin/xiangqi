@@ -9,8 +9,6 @@ from __future__ import annotations
 
 import random
 
-from helpers import board_from, find_move, play
-
 from engine import rules
 from engine.board import START_FEN, Board
 from engine.types import (
@@ -27,6 +25,7 @@ from engine.types import (
     square,
     square_name,
 )
+from tests.helpers import board_from, find_move, play
 
 
 def test_start_position_round_trips_through_fen() -> None:

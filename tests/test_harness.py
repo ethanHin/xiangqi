@@ -11,7 +11,6 @@ from __future__ import annotations
 import json
 
 import pytest
-from helpers import board_from, find_move
 
 from bots.base import BOT_TYPES, Bot, Budget, SearchResult, build_bot
 from bots.greedy_bot import MATE_SCORE, GreedyBot
@@ -28,6 +27,7 @@ from harness.match import (
 )
 from harness.results import score_for, summarize
 from harness.tournament import TournamentConfig, build_jobs, run_match
+from tests.helpers import board_from, find_move
 
 # ---------------------------------------------------------------------------
 # Test doubles
@@ -254,7 +254,7 @@ def test_build_bot_and_specs() -> None:
     assert isinstance(random_bot, RandomBot)
     assert random_bot.spec == {"type": "random", "params": {}}
     assert isinstance(build_bot(_greedy_spec()), GreedyBot)
-    assert set(BOT_TYPES) == {"random", "greedy"}
+    assert set(BOT_TYPES) == {"random", "greedy", "alphabeta"}
 
     with pytest.raises(ValueError, match="player, not a bot"):
         build_bot({"type": "human"})

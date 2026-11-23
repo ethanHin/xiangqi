@@ -7,8 +7,20 @@ instead of hiding them inside a 10-field FEN string.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from engine.board import Board
 from engine.types import BOARD_FILES, BOARD_RANKS, FILE_LETTERS, Move
+
+# Fixed position sets live next to the tests; generate them with
+# ``python -m tools.make_positions``.
+POSITIONS_DIR = Path(__file__).parent
+
+
+def load_fens(name: str) -> list[str]:
+    """Read a FEN list file (one FEN per line, ``#`` comments ignored)."""
+    text = (POSITIONS_DIR / name).read_text(encoding="utf-8")
+    return [line.strip() for line in text.splitlines() if line.strip() and not line.startswith("#")]
 
 
 def board_from(pieces: dict[str, str], side_to_move: str = "w") -> Board:

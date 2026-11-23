@@ -11,8 +11,10 @@ the river, which is why ``piece_value`` takes the square it stands on.
 from __future__ import annotations
 
 from engine.types import (
+    BOARD_SQUARES,
     Color,
     PieceKind,
+    make_piece,
     piece_color,
     piece_kind,
     rank_of,
@@ -37,6 +39,33 @@ CROSSED_SOLDIER_VALUE = 200
 # Ranks at which each side's soldiers count as "across the river".
 RED_RIVER_RANK = 5
 BLACK_RIVER_RANK = 4
+
+# Piece codes are 0 (empty), 1..7 (Red) and 9..15 (Black); see engine.types.
+_PIECE_CODE_COUNT = 16
+
+
+def _build_signed_value_table() -> tuple[int, ...]:
+    """Flat table of the value of every (piece code, square), signed from Red's view.
+
+    ``SIGNED_VALUE[code * 90 + square]`` is positive for Red pieces and negative
+    for Black, with the crossed-soldier bonus already applied, so the leaf
+    evaluation is a single add per occupied square and one sign flip.
+    """
+    table = [0] * (_PIECE_CODE_COUNT * 90)
+    for kind, value in PIECE_VALUES.items():
+        for color, sign in ((Color.RED, 1), (Color.BLACK, -1)):
+            code = make_piece(color, kind)
+            for square_index in range(90):
+                rank = rank_of(square_index)
+                crossed = rank >= RED_RIVER_RANK if color is Color.RED else rank <= BLACK_RIVER_RANK
+                piece_worth = (
+                    CROSSED_SOLDIER_VALUE if kind is PieceKind.SOLDIER and crossed else value
+                )
+                table[code * 90 + square_index] = sign * piece_worth
+    return tuple(table)
+
+
+SIGNED_VALUE = _build_signed_value_table()
 
 
 def piece_value(code: int, square_index: int = -1) -> int:
@@ -63,24 +92,39 @@ def material_balance(board, values: dict[PieceKind, int] | None = None) -> int:
 
     Positive means the side to move is ahead. This is the sign convention the
     evaluator uses in M4 (negamax-compatible).
+
+    The default path uses a precomputed table of signed values per (piece code,
+    square) -- the crossed-soldier bonus is baked in -- so a leaf costs one add per
+    occupied square. That matters: this function runs at every leaf of the search.
+    Passing ``values`` falls back to the generic loop, which is fine for
+    experiments but slower.
     """
-    table = values or PIECE_VALUES
-    own = enemy = 0
-    side = board.side_to_move
-    for square_index, code in enumerate(board.squares):
+    squares = board.squares
+    if values is None:
+        total = 0
+        for square_index in range(BOARD_SQUARES):
+            code = squares[square_index]
+            if code:
+                total += SIGNED_VALUE[code * BOARD_SQUARES + square_index]
+    else:
+        total = _generic_balance(squares, values)
+    return total if board.side_to_move is Color.RED else -total
+
+
+def _generic_balance(squares: list[int], values: dict[PieceKind, int]) -> int:
+    """Material balance from Red's view with a caller-supplied value table."""
+    total = 0
+    for square_index, code in enumerate(squares):
         if code == 0:
             continue
         kind = piece_kind(code)
         if kind is None:
             continue
-        bonus = 0
-        if kind is PieceKind.SOLDIER:
-            bonus = piece_value(code, square_index) - table[kind]
-        if piece_color(code) is side:
-            own += table[kind] + bonus
-        else:
-            enemy += table[kind] + bonus
-    return own - enemy
+        value = values[kind]
+        if kind is PieceKind.SOLDIER and piece_value(code, square_index) > value:
+            value = CROSSED_SOLDIER_VALUE
+        total += value if piece_color(code) is Color.RED else -value
+    return total
 
 
 def total_material(board, color: Color, values: dict[PieceKind, int] | None = None) -> int:

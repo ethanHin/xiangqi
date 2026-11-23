@@ -8,12 +8,11 @@ real game.
 
 from __future__ import annotations
 
-from helpers import board_from, find_move, play
-
 from engine import rules
 from engine.board import Board
 from engine.rules import MOVE_CAP_PLIES
 from engine.types import EMPTY, Color, Move, PlyRecord, PositionHistory, Reason, Result
+from tests.helpers import board_from, find_move, play
 
 
 def test_start_position_is_not_terminal() -> None:
