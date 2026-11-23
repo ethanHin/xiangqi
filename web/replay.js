@@ -376,11 +376,14 @@
     if (!container) {
       throw new Error("Replay.mount needs a container element");
     }
+    // Build the timeline first: it validates the game and throws when it is not
+    // replayable. Destroying the old viewer before this check (the old order) left a
+    // blank pane behind every failed load.
+    const timeline = Core.buildTimeline(game);
     const previous = container.__replayViewer;
     if (previous) {
       previous.destroy();
     }
-    const timeline = Core.buildTimeline(game);
     container.innerHTML = viewerMarkup(game, timeline);
     const viewer = new Viewer(container, game, timeline);
     container.__replayViewer = viewer;

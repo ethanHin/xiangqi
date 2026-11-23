@@ -143,3 +143,4 @@ def test_index_loads_the_classic_scripts_in_dependency_order() -> None:
 def test_node_core_tests_are_committed() -> None:
     assert (WEB / "tests" / "replay-core.test.js").is_file()
     assert (WEB / "tests" / "play-core.test.js").is_file()
+    assert (WEB / "tests" / "replay-mount.test.js").is_file()
