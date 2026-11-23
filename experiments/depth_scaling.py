@@ -207,7 +207,10 @@ def _print_report(pairing_rows, depth_nodes, depth_ms, depth_moves, args) -> Non
         ms = sum(depth_ms[depth]) / len(depth_ms[depth]) if depth_ms[depth] else 0.0
         print(f"{depth:<8}{depth_moves[depth]:>8}{nodes:>14,.0f}{ms:>10.1f}")
     print(f"\nCSV: {Path(args.out)}/<run>/...")
-    print("Note: 10 games per pairing gives wide intervals; do not rank depths from it.")
+    print(
+        f"Note: {args.games} games per pairing; intervals are wide and fixed-depth "
+        "games from one opening are correlated."
+    )
 
 
 def _plot(run_paths, pairing_rows, depth_nodes, depth_ms, args) -> None:

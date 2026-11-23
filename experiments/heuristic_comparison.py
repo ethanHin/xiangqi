@@ -332,7 +332,10 @@ def _print_report(summary_rows, matrix, evaluator_cost, args) -> None:
         "\nEvaluation cost (us per call): "
         + ", ".join(f"{name} {cost:.2f}" for name, cost in evaluator_cost.items())
     )
-    print("Note: 10 games gives wide intervals; this is not a ranking.")
+    print(
+        f"Note: {args.games} games per pairing; intervals are wide and fixed-depth "
+        "games from one opening are correlated."
+    )
 
 
 def _plot(run_paths, summary_rows, matrix, evaluator_cost) -> None:

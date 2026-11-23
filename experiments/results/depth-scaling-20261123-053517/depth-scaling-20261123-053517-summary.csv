@@ -1,0 +1,4 @@
+run_id,experiment,pairing,perspective,games,wins,draws,losses,win_rate,score,wilson_low,wilson_high,side_a,a_avg_depth,a_avg_nodes,a_avg_ms,a_cap_hits,a_depth_short,side_b,b_avg_depth,b_avg_nodes,b_avg_ms,b_cap_hits,b_depth_short,note
+depth-scaling-20261123-053517,depth_scaling,depth 1 vs 2,deeper side (depth 2),50,50,0,0,1.0,1.0,0.9286,1.0,depth 2,1.959,191.7,23.65,0,0,depth 1,1.0,22.0,3.39,0,0,
+depth-scaling-20261123-053517,depth_scaling,depth 2 vs 3,deeper side (depth 3),50,48,0,2,0.96,0.96,0.8654,0.989,depth 3,2.944,2665.1,378.69,0,0,depth 2,1.999,209.9,30.2,0,0,
+depth-scaling-20261123-053517,depth_scaling,depth 3 vs 4,deeper side (depth 4),50,37,7,6,0.74,0.81,0.6808,0.895,depth 4,3.947,6394.7,836.09,0,0,depth 3,2.984,1337.5,189.41,0,0,

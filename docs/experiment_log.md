@@ -65,7 +65,7 @@ are not comparable across machines; node counts and W/D/L are.
 | MCTS vs random (acceptance) | M5 | win rate, 100 games, 200 iterations | -- | 100% (100W 0D 0L) | INCONCLUSIVE |
 | MCTS iterations 100 -> 400 -> 1600 | M5 | win rate vs greedy, 10 games per arm | 10% | 70% | INCONCLUSIVE |
 | UCT exploration 0.7 -> 1.4 -> 2.0 | M5 | win rate vs greedy at 400 iterations | 80% (c=0.7) | 30% (c=2.0) | INCONCLUSIVE |
-| Depth+1 vs depth d (fixed depth) | M6 | score of the deeper side, 10 games per pairing | -- | 1.00 / 1.00 / 0.70 (d1v2 / d2v3 / d3v4) | HELPED |
+| Depth+1 vs depth d (fixed depth) | M6 | score of the deeper side, 50 games per pairing | -- | 1.00 / 0.96 / 0.81 (d1v2 / d2v3 / d3v4) | HELPED |
 | Evaluator round-robin at depth 3 | M6 | score vs `material`, 10 games | -- | `material_pst` 0.70, `material_pst_mobility` 0.55, `full` 0.80 | INCONCLUSIVE |
 | MCTS vs alpha-beta at 750 ms | M6 | score of alpha-beta, 10 games | -- | 1.00 (10W 0D 0L) | HELPED |
 | `full` vs `material` at 750 ms | M6 | score of `full`, 10 games | -- | 0.55 (5W 1D 4L) | INCONCLUSIVE |
@@ -752,8 +752,14 @@ of 3,056,865, and with a fixed 200 ms budget it completes depth 2-3 per move, at
   | 2 vs 3 | 10-0-0 | 1.00 [0.72-1.00] | 2.951 / 2,549 / 332 | 2.000 / 207 / 27.1 |
   | 3 vs 4 | 6-2-2 | 0.70 [0.40-0.89] | 3.936 / 7,196 / 872 | 2.979 / 1,672 / 219 |
 
-  Nodes grow 19 -> 202 -> 2,251 -> 8,257 per move (x9 per ply) and time
-  2.9 -> 25 -> 301 -> 1,036 ms (x11). Cap hits: none (no cap). Every sub-depth value
+  Nodes grow 19 -> 202 -> 2,251 -> 8,257 per move and time 2.9 -> 25 -> 301 ->
+  1,036 ms across the marginal averages, but those mix different games. The
+  like-for-like ratios, computed from each pairing's own games, are **1->2: 10.43x
+  nodes and 7.91x time; 2->3: 12.46x / 12.40x; 3->4: 4.32x / 4.00x**. LIKELY: the
+  much smaller 3->4 ratio comes from the games themselves -- the depth-3 side faces a
+  depth-4 opponent, so the positions are quieter, and the depth-4 side's proven mates
+  end some searches early. The test that would settle it is node counts at depths 3
+  and 4 on the same fixed positions, which `tools/search_stats.py` can measure. Cap hits: none (no cap). Every sub-depth value
   reported by a side was a proven-mate early stop, so the depth assertion found zero
   mismatches.
 - **Observation:** MEASURED: one extra ply wins every game up to 2v3, and still wins
@@ -840,9 +846,51 @@ of 3,056,865, and with a fixed 200 ms budget it completes depth 2-3 per move, at
   12,457 nodes at 740 ms -- half a ply deeper for the same time.
 - **Observation:** MEASURED: the richer evaluator searches visibly shallower at equal
   time, and this sample gives it only a 0.55 score. An earlier 10-game run of the same
-  row gave 0.15, so the estimate swings wildly at this sample size. LIKELY: at 750 ms
-  the extra 60 us per evaluation costs about half a ply, and a half ply is worth more
-  than the positional terms at this level.
+  row gave **0.15**. That earlier run was discarded because of a bug in the summary
+  writer (the summary CSV was header-only); its *per-game* CSV was fine, so its Row B
+  result is still a valid sample of the same settings. The same row scoring 0.15 then
+  and 0.55 now is exactly the noise this milestone's caveats are about. LIKELY: at
+  750 ms the extra 60 us per evaluation costs about half a ply, and a half ply is
+  worth more than the positional terms at this level.
 - **Caveat:** 10 games, and the two runs disagreed (0.15 vs 0.55); this row proves
   nothing yet. A `--games 50` run is the next step if the question matters.
 - **Verdict:** INCONCLUSIVE.
+---
+
+## 2026-11-23 -- M6 depth scaling, 50 games per pairing
+
+- **Commit/tag:** `m6-final`.
+- **What changed:** nothing; this is the larger run of the same experiment.
+- **Setup:** alpha-beta at fixed depth with `time_limit_ms=None` on both sides,
+  **50 games per pairing** (150 games total), **25 distinct openings per pairing, each
+  played twice** (once per colour), seed 1, 6-ply openings, `full` evaluator,
+  **8 workers**, Windows 11 / CPython 3.15.0 / 16 logical CPUs. Command:
+  `python -m experiments.depth_scaling --depths 1,2,3,4 --games 50 --workers 8`.
+  Wall clock **495 s (8:15)**. Raw data:
+  `experiments/results/depth-scaling-20261123-053517/`.
+- **Result:** W/D/L from the deeper side's view; the first interval is the
+  game-level Wilson interval, the second clusters the two games of each opening
+  (the honest one, since fixed-depth games from one opening are correlated):
+
+  | pairing | W-D-L | score | 95% games | 95% openings | deeper depth / nodes / ms | shallower depth / nodes / ms |
+  |---|---|---|---|---|---|---|
+  | 1 vs 2 | 50-0-0 | 1.00 | 0.93-1.00 | 0.87-1.00 | 1.959 / 192 / 23.7 | 1.000 / 22 / 3.4 |
+  | 2 vs 3 | 48-0-2 | 0.96 | 0.87-0.99 | 0.80-0.99 | 2.944 / 2,665 / 379 | 1.999 / 210 / 30.2 |
+  | 3 vs 4 | 37-7-6 | 0.81 | 0.68-0.89 | 0.62-0.92 | 3.947 / 6,395 / 836 | 2.984 / 1,338 / 189 |
+
+  Cap hits: 0 (no cap). Depth assertion: 0 mismatches; every sub-depth report was a
+  proven-mate early stop. Same-game node/time ratios (total per side in that
+  pairing): **1->2 8.90x / 7.13x, 2->3 12.87x / 12.71x, 3->4 4.81x / 4.44x**.
+- **Observation:** MEASURED: the deeper side wins every pairing, and the margin
+  shrinks with depth (1.00 -> 0.96 -> 0.81) while cost per extra ply stays in the
+  4-13x range. The 2v3 margin is smaller than the 10-game pilot suggested (10-0-0),
+  which is exactly why the pilot is only a pilot. LIKELY: the 3->4 ratio is lower
+  because those games are quieter and the depth-4 side's mates end some searches
+  early; the test that would settle it is nodes at depths 3 and 4 on identical fixed
+  positions (`tools/search_stats.py`).
+- **Caveat:** 25 openings, each played twice; the 150 games are not 150 independent
+  samples, and the games from one opening are deterministic repeats of each other, so
+  the game-level Wilson interval understates the uncertainty. The opening-clustered
+  interval is the one quoted second. Even so, 3v4's clustered lower bound (0.62) is
+  well above 0.5.
+- **Verdict:** HELPED.
