@@ -69,15 +69,16 @@ Measured on Windows 11, CPython 3.15.0, 16 logical CPUs, 8 workers (the same mac
 as the log entries). `--games N` means **N games per pairing**, so the total is N x the
 number of pairings (3 for depth 1-4, 8 for the heuristic script).
 
-| script | default run | measured at `--games 10` | `--games 50` (estimate) | `--games 100` (estimate) |
+| script | default run | `--games 10` | `--games 50` | `--games 100` |
 |---|---|---|---|---|
-| `depth_scaling --depths 1,2,3,4` | 30 games | 132 s (4.4 s/game average) | ~11 min (150 games) | ~22 min (300 games) |
-| `heuristic_comparison` | 80 games | 472 s (5.9 s/game average) | ~39 min (400 games) | ~79 min (800 games) |
+| `depth_scaling --depths 1,2,3,4` | 30 games | 132 s (4.4 s/game) | **495 s = 8:15** (150 games, 3.3 s/game) | ~17 min (300 games, estimate) |
+| `heuristic_comparison` | 80 games | 472 s (5.9 s/game) | ~25 min (400 games, estimate) | **3,028 s = 50:27** (800 games, 3.8 s/game) |
 
-The averages hide a wide spread: a depth-1-vs-2 game is ~1 s, a depth-3-vs-4 game is
-~40 s, and the equal-time rows are ~45 s each because both bots spend the full
-750 ms. Estimates are linear extrapolations of the measured run, not measurements.
-`--quick` takes a few seconds for either script.
+The measured 50- and 100-game runs are marked in bold; the others are linear
+extrapolations of the measured ones. The per-game average hides a wide spread: a
+depth-1-vs-2 game is ~1 s, a depth-3-vs-4 game is ~40 s, and the equal-time rows are
+~45 s each because both bots spend the full 750 ms. `--quick` takes a few seconds for
+either script.
 
 ## Reading the CSVs
 

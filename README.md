@@ -501,20 +501,21 @@ evidence (per-game CSV, summary CSV with Wilson intervals, PNG plots, and per-ga
 JSON) into `experiments/results/<run-id>/`. `experiments/README.md` has the exact
 commands, the flag reference, the CSV column guide, and measured run times.
 
-| experiment | what it varies | default run (10 games per pairing) |
+| experiment | what it varies | latest run (50-100 games per pairing) |
 |---|---|---|
-| `depth_scaling` | alpha-beta depth d vs d+1, fixed depth, `full` evaluator | deeper side scores 1.00 in 1v2 and 2v3, 0.70 [0.40-0.89] in 3v4 |
-| `heuristic_comparison` | the four evaluators round-robin at depth 3, plus MCTS-vs-alpha-beta and full-vs-material at 750 ms | `full` beats material (0.80) but loses to `material_pst` (0.20); alpha-beta beats MCTS 10-0 at equal time |
+| `depth_scaling` | alpha-beta depth d vs d+1, fixed depth, `full` evaluator | deeper side scores 1.00 in 1v2, 0.96 in 2v3 and 0.81 [0.62-0.92 clustered] in 3v4 |
+| `heuristic_comparison` | the four evaluators round-robin at depth 3, plus MCTS-vs-alpha-beta and full-vs-material at 750 ms | each richer evaluator beats material clearly (0.68-0.75); the three richer ones are statistically indistinguishable; alpha-beta beats MCTS 100-0 at equal time |
 
 ```bash
-python -m experiments.depth_scaling --depths 1,2,3,4 --games 10 --workers 8
-python -m experiments.heuristic_comparison --games 10 --workers 8
+python -m experiments.depth_scaling --depths 1,2,3,4 --games 50 --workers 8
+python -m experiments.heuristic_comparison --games 100 --workers 8
 ```
 
-Node counts grow about ninefold per ply (19 / 202 / 2,251 / 8,257 at depths 1-4) and
-per-move time about elevenfold (2.9 / 25 / 301 / 1,036 ms). Ten games gives wide
-intervals; `--games 50` and `--games 100` are supported and roughly linear in time
-(see the estimates in `experiments/README.md`).
+Node counts grow 22 -> 210 -> 2,665 -> 6,395 per move across depths 1-4 in the depth
+scaling run, and per-move time 3.4 -> 30 -> 379 -> 836 ms: roughly an order of
+magnitude per ply except the last pair, which the log discusses. Intervals are
+Wilson intervals on the score; games from one opening are correlated, so the log
+quotes a stricter opening-clustered interval as well. See `experiments/README.md`.
 
 ## Tournament harness
 

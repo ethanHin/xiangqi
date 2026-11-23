@@ -214,7 +214,8 @@ def run(args: argparse.Namespace) -> None:
                 totals_second,
                 f"{first} (depth {args.depth})",
                 f"{second} (depth {args.depth})",
-                f"fixed depth, safety cap {args.safety_ms:g} ms; 10 games gives wide intervals",
+                f"fixed depth, safety cap {args.safety_ms:g} ms; {args.games} games per "
+                "pairing, and fixed-depth games from one opening are correlated",
             )
             summary_csv.write(row)
             summary_rows.append(row)

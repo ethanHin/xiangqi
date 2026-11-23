@@ -183,21 +183,31 @@ def main() -> None:
                     f"{ratio_nodes:>12}{ratio_ms:>12}"
                 )
 
-    print("\nPer-side totals")
-    print(f"{'pairing':<42}{'side':>30}{'moves':>8}{'nodes/move':>12}{'ms/move':>10}")
-    print("-" * 102)
+    # Aggregate by *configuration*, not by colour: colours are swapped inside a
+    # pairing, so "red" is not a fixed bot.
+    print("\nPer-config totals (both colours)")
+    header = (
+        f"{'pairing':<42}{'config':>34}{'moves':>8}"
+        f"{'avg depth':>10}{'nodes/move':>12}{'ms/move':>10}"
+    )
+    print(header)
+    print("-" * len(header))
     for pairing, pairing_rows in by_pairing.items():
-        for side in ("red", "black"):
-            moves = sum(int(row[side + "_moves"]) for row in pairing_rows)
-            nodes = sum(
-                float(row[side + "_avg_nodes"]) * int(row[side + "_moves"]) for row in pairing_rows
-            )
-            ms = sum(
-                float(row[side + "_avg_ms"]) * int(row[side + "_moves"]) for row in pairing_rows
-            )
-            label = short_label(parse_spec(pairing_rows[0][side]))
+        totals: dict[str, list[float]] = defaultdict(lambda: [0.0, 0.0, 0.0, 0.0])
+        for row in pairing_rows:
+            for side in ("red", "black"):
+                moves = int(row[side + "_moves"])
+                label = short_label(parse_spec(row[side]))
+                bucket = totals[label]
+                bucket[0] += moves
+                bucket[1] += float(row[side + "_avg_depth"]) * moves
+                bucket[2] += float(row[side + "_avg_nodes"]) * moves
+                bucket[3] += float(row[side + "_avg_ms"]) * moves
+        for label, (moves, depth, nodes, ms) in totals.items():
+            if not moves:
+                continue
             print(
-                f"{pairing:<42}{side + ': ' + label:>30}{moves:>8}"
+                f"{pairing:<42}{label:>34}{moves:>8.0f}{depth / moves:>10.2f}"
                 f"{nodes / moves:>12,.1f}{ms / moves:>10.1f}"
             )
 

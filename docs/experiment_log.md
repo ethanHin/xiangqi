@@ -66,9 +66,10 @@ are not comparable across machines; node counts and W/D/L are.
 | MCTS iterations 100 -> 400 -> 1600 | M5 | win rate vs greedy, 10 games per arm | 10% | 70% | INCONCLUSIVE |
 | UCT exploration 0.7 -> 1.4 -> 2.0 | M5 | win rate vs greedy at 400 iterations | 80% (c=0.7) | 30% (c=2.0) | INCONCLUSIVE |
 | Depth+1 vs depth d (fixed depth) | M6 | score of the deeper side, 50 games per pairing | -- | 1.00 / 0.96 / 0.81 (d1v2 / d2v3 / d3v4) | HELPED |
-| Evaluator round-robin at depth 3 | M6 | score vs `material`, 10 games | -- | `material_pst` 0.70, `material_pst_mobility` 0.55, `full` 0.80 | INCONCLUSIVE |
-| MCTS vs alpha-beta at 750 ms | M6 | score of alpha-beta, 10 games | -- | 1.00 (10W 0D 0L) | HELPED |
-| `full` vs `material` at 750 ms | M6 | score of `full`, 10 games | -- | 0.55 (5W 1D 4L) | INCONCLUSIVE |
+| Evaluator round-robin at depth 3 | M6 | score vs `material`, 100 games | -- | `material_pst` 0.75, `material_pst_mobility` 0.68, `full` 0.74 (all separated from 0.5) | HELPED |
+| Richer evaluators vs each other, depth 3 | M6 | score, 100 games | -- | 0.49 / 0.54 / 0.57 (every interval includes 0.5) | INCONCLUSIVE |
+| MCTS vs alpha-beta at 750 ms | M6 | score of alpha-beta, 100 games | -- | 1.00 (100W 0D 0L, 0.96-1.00) | HELPED |
+| `full` vs `material` at 750 ms | M6 | score of `full`, 100 games | -- | 0.54 (47W 13D 40L, 0.44-0.63) | INCONCLUSIVE |
 
 ## Problem definition
 
@@ -85,26 +86,28 @@ Every fact is visible to both players: **perfect information**, no hidden state.
 
 **Actions.** One action is a legal move: a piece, a destination, and (implicitly)
 what it captures. The measured branching factor at the start position is **44 legal
-moves**. Across the **30 alpha-beta vs alpha-beta games** from the M6 depth-scaling
-run (`experiments/results/depth-scaling-20261123-050011`, replayed by
-`python -m tools.branching_stats`) there are **2,263 positions** with an average of
-**34.0 legal moves** (median 36, min 1, max 88), falling as pieces come off:
+moves**. Across the **150 alpha-beta vs alpha-beta games** from the M6 depth-scaling
+run (`experiments/results/depth-scaling-20261123-053517`, 25 openings per pairing,
+replayed by `python -m tools.branching_stats`) there are **11,297 positions** with an
+average of **31.9 legal moves** (median 34, min 1, max 88), falling as pieces come
+off:
 
 | ply band | positions | avg legal moves |
 |---|---|---|
-| 0-19 | 600 | 39.20 |
-| 20-39 | 578 | 36.77 |
-| 40-59 | 465 | 34.48 |
-| 60+ | 620 | 25.97 |
+| 0-19 | 2,951 | 37.85 |
+| 20-39 | 2,712 | 36.13 |
+| 40-59 | 2,059 | 33.06 |
+| 60+ | 3,575 | 23.00 |
 
-Those 30 games averaged **75.4 plies** (median 66, min 31, max 294). This replaces
-the earlier sample, which was mostly greedy-vs-random: searching players keep more
-pieces on the board longer, so the average branching factor rose from 26.9 to 34.0
-and games shortened from 157 to 75 plies on average.
+Those 150 games averaged **75.3 plies** (median 64, min 3, max 294). This replaced a
+30-game sample from the pilot (34.0 moves, 75.4 plies) and, before that, a
+greedy-vs-random sample (26.9 moves, 157 plies). Searching players keep more material
+on the board longer, so the branching factor is higher than under random play and
+games are shorter.
 
-The sample is still finite (30 games, fixed-depth 1-4 self-play), and the random
-opening plies are not counted because the tool starts from ``start_fen``. Treat the
-numbers as representative of this project's games, not of Xiangqi in general.
+The sample is still finite and is fixed-depth 1-4 self-play; the random opening plies
+are not counted because the tool starts from ``start_fen``. Treat the numbers as
+representative of this project's games, not of Xiangqi in general.
 
 **Transition model.** Deterministic and known: `board.make_move(move)` updates the
 position, the hash, and the move history; `unmake_move()` restores them exactly.
@@ -893,4 +896,63 @@ of 3,056,865, and with a fixed 200 ms budget it completes depth 2-3 per move, at
   the game-level Wilson interval understates the uncertainty. The opening-clustered
   interval is the one quoted second. Even so, 3v4's clustered lower bound (0.62) is
   well above 0.5.
+- **Verdict:** HELPED.
+---
+
+## 2026-11-23 -- M6 heuristic comparison, 100 games per pairing (all rows)
+
+- **Commit/tag:** `m6-final`.
+- **What changed:** nothing. This is the larger run of the same script, including
+  rows A and B.
+- **Setup:** **100 games per pairing** (800 games total), **50 distinct openings per
+  pairing, each played twice** (once per colour), seed 1, 6-ply openings,
+  **8 workers**, Windows 11 / CPython 3.15.0 / 16 logical CPUs. Fixed depth 3 with a
+  5,000 ms safety cap for the round-robin; rows A and B at 750 ms per move. Command:
+  `python -m experiments.heuristic_comparison --games 100 --workers 8`.
+  Wall clock **3,028 s (50:27)**. Raw data:
+  `experiments/results/heuristic-comparison-20261123-054636/`.
+- **Result:** score of the row evaluator against the column one; the second interval
+  clusters the two games of each opening:
+
+  | pairing | W-D-L (first side) | score | 95% games | 95% openings |
+  |---|---|---|---|---|
+  | material vs material_pst | 20-10-70 | 0.25 | 0.18-0.34 | 0.15-0.38 |
+  | material vs material_pst_mobility | 28-9-63 | 0.33 | 0.24-0.42 | 0.21-0.46 |
+  | material vs full | 22-7-71 | 0.26 | 0.18-0.35 | 0.15-0.39 |
+  | material_pst vs material_pst_mobility | 47-4-49 | 0.49 | 0.39-0.59 | 0.36-0.62 |
+  | material_pst vs full | 51-5-44 | 0.54 | 0.44-0.63 | 0.40-0.67 |
+  | material_pst_mobility vs full | 55-5-40 | 0.57 | 0.48-0.67 | 0.44-0.70 |
+
+  **Cap hits: 0 of 65,158 moves** in the round-robin (nothing approached the 5 s
+  cap). Average depth 2.97-2.98 per side (shortfalls are proven mates); per-move
+  cost at equal depth: material 95-100 ms (1,285-1,337 nodes), `material_pst`
+  124-130 ms (1,577-1,699), `material_pst_mobility` 210-225 ms (1,869-2,015), `full`
+  231-260 ms (1,748-1,995).
+
+  Row A (MCTS vs alpha-beta, 750 ms): alpha-beta **100-0-0**, score 1.00
+  [0.96-1.00], openings [0.93-1.00]. Alpha-beta depth 3.20, 5,897 nodes/move,
+  707 ms; MCTS most-visited-line depth **1.27**, 346 iterations/move, 769 ms.
+  MCTS kept its preset exploration of 1.4; the M5 10-game sweep favoured 0.7 at 400
+  iterations, which was not adopted (10 games cannot support a change) and can be
+  re-run with `--mcts-exploration 0.7`.
+
+  Row B (`full` vs `material`, 750 ms): `full` **47-13-40**, score 0.54
+  [0.44-0.63], openings [0.40-0.67]. `full` depth 4.13 / 7,967 nodes / 746 ms;
+  `material` depth **4.85** / 12,033 nodes / 738 ms.
+- **Observation:** MEASURED: all three richer evaluators beat `material` clearly
+  (their score against it is 0.25-0.33, upper bounds <= 0.46 even clustered), and the
+  three of them are statistically indistinguishable from each other (0.49, 0.54,
+  0.57, every interval containing 0.5). The pilot's "`full` loses to `material_pst`
+  0.20" did not survive: at 100 games `full` scores 0.46 against `material_pst`, with
+  an interval spanning 0.5, so the apparent intransitivity was pilot noise. Row B at
+  equal time is also not separated (0.54 [0.40-0.67]) even though `material` reaches
+  0.72 plies more depth: LIKELY the positional terms roughly compensate for the lost
+  depth; the test that would settle it is a larger row B (5-10x games) or an
+  equal-node comparison.
+- **Caveat:** 50 openings per pairing, each played twice; fixed-depth games from one
+  opening are deterministic repeats, so the 100 games are not 100 independent
+  samples and the game-level Wilson interval understates the uncertainty (the
+  opening-clustered interval is the second one). The time-limited rows A and B are
+  not deterministic at all: the pilot's row B scored 0.15 and this run 0.54. No
+  evaluator, table value, weight or default was changed because of these results.
 - **Verdict:** HELPED.
