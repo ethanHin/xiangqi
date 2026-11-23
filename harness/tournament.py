@@ -22,6 +22,7 @@ Run it from the command line::
 from __future__ import annotations
 
 import argparse
+import json
 import os
 from collections.abc import Sequence
 from concurrent.futures import ProcessPoolExecutor
@@ -124,6 +125,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     parser.add_argument("--bot-a", default="greedy", choices=BOT_TYPES)
     parser.add_argument("--bot-b", default="random", choices=BOT_TYPES)
+    parser.add_argument(
+        "--bot-a-params",
+        default="{}",
+        help="JSON object of parameters for bot A, e.g. '{\"depth\": 3}'",
+    )
+    parser.add_argument(
+        "--bot-b-params",
+        default="{}",
+        help="JSON object of parameters for bot B, e.g. '{\"time_limit_ms\": 200}'",
+    )
     parser.add_argument("--games", type=int, default=10, help="even number of games")
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument(
@@ -143,8 +154,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     if not 0 <= args.opening_plies <= 8:
         parser.error("--opening-plies must be between 0 and 8")
 
-    bot_a = {"type": args.bot_a, "params": {}}
-    bot_b = {"type": args.bot_b, "params": {}}
+    bot_a = {
+        "type": args.bot_a,
+        "params": _parse_params(parser, args.bot_a_params, "--bot-a-params"),
+    }
+    bot_b = {
+        "type": args.bot_b,
+        "params": _parse_params(parser, args.bot_b_params, "--bot-b-params"),
+    }
     workers = args.workers if args.workers is not None else default_workers(args.games)
     config = TournamentConfig(
         games=args.games,
@@ -179,6 +196,17 @@ def main(argv: Sequence[str] | None = None) -> int:
     if not args.no_save:
         print(f"saved {len(records)} game files to {args.save_dir}")
     return 0
+
+
+def _parse_params(parser: argparse.ArgumentParser, text: str, flag: str) -> dict[str, Any]:
+    """Parse a bot parameter JSON object, turning mistakes into a CLI error."""
+    try:
+        params = json.loads(text)
+    except json.JSONDecodeError as error:
+        parser.error(f"{flag} is not valid JSON: {error}")
+    if not isinstance(params, dict):
+        parser.error(f"{flag} must be a JSON object, e.g. '{{\"depth\": 3}}'")
+    return params
 
 
 if __name__ == "__main__":  # pragma: no cover - spawn guard

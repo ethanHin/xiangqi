@@ -190,7 +190,7 @@ Both run through the tournament harness and write CSV plus plots.
 
 Both scripts take `--games` (default 10, must be even so colors split evenly, CLI errors otherwise), `--quick` (2 games at low depth, for smoke tests), and `--seed`. Games run in parallel processes (`ProcessPoolExecutor`; threads do not help because of the GIL). Every report includes average depth reached, average nodes and average time per move alongside win/draw/loss. Full runs such as `--games 100` are only launched deliberately with explicit arguments.
 
-Save raw results to `experiments/results/` (CSV) and plots as PNG. If matplotlib is not installed, write the CSV and skip the plots with a warning rather than failing. Write a short `experiments/README.md` explaining how to reproduce.
+Save raw results to `experiments/results/` (CSV) and plots as PNG. Both scripts must write the per-game CSV; if matplotlib is not installed, write the CSV and skip the plots with a warning rather than failing. Write a short `experiments/README.md` explaining how to reproduce. Append a `docs/experiment_log.md` entry for each run: it must link to the CSV file and state the exact command used, plus the setup, W/D/L, averages, observation, caveat and verdict in the format at the top of that file.
 
 ### M7: Replay viewer
 Static page in `web/`. Loads a game JSON (file picker or `?game=path`), draws the 9x10 board with river and palace, steps forward and back through moves, shows move number, result, and the bots' names. No rules logic; it only applies recorded moves. Render pieces as text characters or simple SVG; no image assets required.
@@ -296,6 +296,7 @@ Moves use ICCS-style coordinates: file a-i, rank 0-9, for example `h2e2`. Red st
 - Search code is performance-sensitive: avoid allocation in hot loops, no board copies, no logging inside the search.
 - The server and frontend never duplicate rules logic. If the UI needs a fact about the position (legal moves, check, game over), the engine provides it through the API.
 - Commit after each milestone with a message naming it. Tag the commit where M1 perft passes.
+- Record every parameter change and its measured effect in `docs/experiment_log.md`. Each entry gives the commit/tag, the single change, the setup (bots, games, seed, openings, cap or depth, workers, exact command), the result (W/D/L, win rate, plus depth/nodes/time where applicable), an observation marked MEASURED or LIKELY, a caveat, and a one-word verdict: HELPED, HURT, NEUTRAL, or INCONCLUSIVE (use INCONCLUSIVE when the sample is too small or there is no matched before/after). Keep the summary table at the top of that file up to date. This includes runs whose result was bad.
 - If a rule is ambiguous, pick the simplest reading, document it in `README.md`, and keep it in `engine/rules.py`.
 - If perft or any test disagrees with the reference, fix the engine; never edit the expected numbers to match.
 
