@@ -7,7 +7,7 @@ Build a Xiangqi (Chinese Chess) engine, several search bots, a match harness, an
 - Language: Python 3.11+, standard library first. Optional: `numpy`, `matplotlib`. Required for tests: `pytest` (every milestone runs it). `ruff` is allowed as a dev tool for linting and formatting. For the web server (M8) the only extra dependencies allowed are `fastapi`, `uvicorn`, and `httpx` (for tests). Do not add other heavy dependencies without asking.
 - Frontend: a plain HTML/JS web app (no framework, no build step) with three screens: game setup, live play, and replay. It supports human vs bot and bot vs bot (human vs human is not supported). The user picks who plays each side and, for each bot, which algorithm and settings it uses. There is no rules logic in the frontend: legality, check, and game-over detection all come from the backend.
 - Scope: alpha-beta (primary bot) and plain MCTS (comparison). AlphaZero-style neural MCTS is future work; leave a note in the README, build nothing for it.
-- Opening: N random legal plies from a seeded RNG (default N=6, configurable 4-8).
+- Opening: N random legal plies from a seeded RNG (default N=6, configurable 0-8, where 0 starts from the initial position).
 - Repetition: threefold repetition is a draw, except that a side giving perpetual check loses (see Rules). Implemented behind one swappable function.
 
 ### Decisions recorded during review
@@ -24,8 +24,8 @@ These were settled while reviewing the spec. They are binding; do not revisit.
 - `board.make_move` asserts pseudo-legality only (it does not check that the mover's own general is safe), because the search hot loop filters legality itself. The server validates human moves against `board.legal_moves()`.
 - The 100-game acceptance matches (M2 greedy vs random, M3 alpha-beta vs greedy, M5 MCTS vs random) stay at 100 games, but run with a per-move time cap and in parallel processes so they finish in well under an hour.
 - Perpetual check: the window is the moves since the first occurrence of the repeated position. If the checking side checked on all of its own moves in that window and the opponent checked on none, the checker loses; if both sides checked on all of their moves it is a draw; any other combination of checking is a draw.
-- `GET /api/games` lists saved and in-progress games (id, players, result, plies, created) so the Replay screen can find games in `games/`.
-- Version control: the repository is initialised with `git init`. `games/*.json` is gitignored except samples, along with `__pycache__`, `.venv`, and `experiments/results/`.
+- `GET /api/games` lists in-memory and saved games (id, players, result, reason, plies, created) so the Replay screen can find games in `games/`. Saved-only rows are marked `"saved": true`, dated by the file's modification time, and the list is capped at the newest 25 overall; files that are not valid game JSON are skipped.
+- Version control: the repository is initialised with `git init`. `games/*.json` is gitignored except samples, along with `__pycache__`, `.venv`, and `experiments/results/*/games/` (the CSVs and plots are committed).
 
 ## Rules
 
@@ -93,7 +93,7 @@ xiangqi/
   server/
     app.py          # FastAPI app (thin layer over engine, bots, harness)
     registry.py     # bot registry: names, parameter schemas, defaults, factory
-    games.py        # in-memory game store, per-game lock, saving finished games
+    games.py        # in-memory store, saved-game listing, per-game lock, autosave
     __main__.py     # `python -m server` starts uvicorn and serves web/
   web/
     index.html      # app shell: setup, play, replay screens
@@ -220,7 +220,7 @@ Add human vs bot and bot vs bot play on top of the existing engine and bots. Hum
 **API** (JSON, all endpoints are plain `def` so FastAPI runs bot search in its threadpool):
 - `GET /api/bots`: list bot types with parameter schemas and defaults.
 - `POST /api/games`: body `{red, black, seed?, opening_plies?, start_fen?}` where `red` and `black` are player specs. Creates a game (random opening applied as in the harness) and returns the game state. Returns 400 if both sides are `human`.
-- `GET /api/games`: list saved and in-progress games (id, players, result, plies, created) for the Replay screen.
+- `GET /api/games`: the newest 25 in-memory and saved games (id, players, result, reason, plies, created); file-only rows carry `"saved": true` and use the file's modification time.
 - `GET /api/games/{id}`: current state.
 - `POST /api/games/{id}/move`: body `{move: "h2e2"}`. Only valid when the side to move is a human. Validates legality server-side, applies it, returns the new state. Illegal move or wrong turn returns HTTP 400 with a clear reason.
 - `POST /api/games/{id}/step`: asks the bot on the side to move to play one move, applies it, returns the new state including the bot's depth, nodes, time, and eval. Returns 400 if a human is to move or the game is over.

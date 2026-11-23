@@ -169,6 +169,24 @@ for (const [context, expected] of contexts) {
   check(core.shouldAutoStep(context) === expected, "auto-step " + JSON.stringify(context));
 }
 
+const toggleCases = [
+  // Pause must work while the bot is thinking (the in-flight move still lands).
+  [{ playing: true, busy: true, gone: false, over: false }, true],
+  // Never start another move while one is pending.
+  [{ playing: false, busy: true, gone: false, over: false }, false],
+  [{ playing: true, busy: false, gone: false, over: false }, true],
+  [{ playing: false, busy: false, gone: false, over: false }, true],
+  [{ playing: true, busy: true, gone: true, over: false }, false],
+  [{ playing: true, busy: false, gone: false, over: true }, false],
+  [{ playing: false, busy: false, gone: false, over: true }, false],
+];
+for (const [context, expected] of toggleCases) {
+  check(
+    core.playToggleEnabled(context) === expected,
+    "play toggle " + JSON.stringify(context),
+  );
+}
+
 check(core.describeError({ kind: "network" }).indexOf("python -m server") >= 0, "network message");
 check(core.describeError({ status: 404 }).indexOf("no longer exists") >= 0, "404 message");
 check(core.describeError({ status: 400, detail: "illegal move 'x'" }) === "illegal move 'x'", "400 detail");

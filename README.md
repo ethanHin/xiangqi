@@ -4,9 +4,9 @@ A Xiangqi (Chinese Chess) engine, several search bots, a match harness, an
 experiment suite, and a local web app for human-vs-bot and bot-vs-bot play with
 replay.
 
-**Status: complete (M1-M8).** The engine, bots, evaluation, harness, experiments,
-replay viewer, live-play server and web app are all built; `pytest` is green and
-`python -m server` serves the whole app.
+**Status: v1.0 — complete (M1-M8).** The engine, bots, evaluation, harness,
+experiments, replay viewer, live-play server and web app are all built; `pytest` is
+green and `python -m server` serves the whole app.
 
 Two things are deliberately out of scope: AlphaZero-style training (future work, no
 code) and any form of online or multi-user play.
@@ -16,14 +16,14 @@ code) and any form of online or multi-user play.
 ```bash
 py -m venv .venv                       # or: python -m venv .venv
 .venv\Scripts\activate                 # Windows;  source .venv/bin/activate elsewhere
-pip install -e ".[dev]"
+pip install -e ".[dev,server]"         # engine, tests, and the live-play server
 
-pytest                                 # fast tests (perft 1-3, quirks, rules)
-pytest -m slow                         # perft depth 4, ~23 s
+pytest                                 # the fast suite (everything except the long runs)
+pytest -m slow                         # 100-game acceptance matches + perft 4, ~10 min here
 ```
 
-`pytest` skips the `slow` marker by default; everything else runs in about a
-second. `ruff check .` and `ruff format .` keep the code tidy.
+`pytest` skips the `slow` marker by default; the fast suite takes about 15 seconds on
+this machine. `ruff check .` and `ruff format .` keep the code tidy.
 
 > NOTE: on this machine the `python` command points at the Windows Store stub and
 > fails. Use `py` (the launcher) or the virtualenv's `.venv\Scripts\python.exe`.
@@ -81,7 +81,7 @@ web/               # the browser app: setup, play, replay (classic scripts, no b
 server/            # live-play API (M8)
   app.py           # FastAPI app: /api routes, /docs, static / and /games
   registry.py      # bot types, parameter schemas, validation, factory
-  games.py         # in-memory game store, per-game lock, autosave, clamps
+  games.py         # in-memory store, saved-game listing, per-game lock, autosave, clamps
   __main__.py      # python -m server
 tests/             # pytest suite, including the fixed position sets
   positions_middlegame.txt
@@ -124,8 +124,9 @@ One bot move: `POST /step` → `server/registry.py` builds the bot from the stor
 player spec with the budget clamped to 10 s → `bot.choose_move(board, budget)` →
 validated move → `make_move` → the response adds the `search` block. A finished game
 is written once to `games/<id>.json`; the Replay screen reads it through
-`GET /api/games/{id}/export`, and the same file is served statically at
-`/games/<id>.json` for a replay page without the API.
+`GET /api/games/{id}/export` while the server still holds it, and from the same file
+served at `/games/<id>.json` once only the file remains (the Recent list returns both
+kinds and marks file-only rows `"saved": true`).
 
 ## Coordinates and notation
 
@@ -602,20 +603,20 @@ stalemates (also a win), 2 move-cap draws. Reproduce with
 an 8-ply perpetual check, plus checkmate, stalemate and alpha-beta games with
 per-move search stats. Regenerate them with `python -m tools.make_samples`.
 
-## Server (M8, part 1: live play API)
+## Server (M8: live play API)
 
 `python -m server` starts a local, single-user server for human-vs-bot and
 bot-vs-bot games. It is a thin layer over the engine, the bots, and the harness: no
 rules or search code lives in `server/`.
 
-**Install** (this project's Windows virtualenv):
+**Install** — the Quick start install already includes the server extra. If you
+installed only `.[dev]`, add the server (it also provides the `httpx` test client):
 
 ```powershell
 .\.venv\Scripts\python.exe -m pip install -e ".[server,dev]"
 ```
 
-That adds `fastapi`, `uvicorn`, and `httpx` (the test client). Start it from the
-project root so `games/` and `web/` resolve:
+Start it from the project root so `games/` and `web/` resolve:
 
 ```powershell
 .\.venv\Scripts\python.exe -m server
@@ -627,16 +628,19 @@ project root so `games/` and `web/` resolve:
 * The openapi schema: `http://127.0.0.1:8000/openapi.json`
 
 Bound to `127.0.0.1` only; no reload, no CORS, no authentication. The game store is
-in memory (200 games, finished ones evicted first). A finished game is written once
-to `games/<id>.json` and is also served at `/games/<id>.json`, so the viewer can open
-it with `?game=games/<id>.json`.
+in memory (200 games, finished ones evicted first), and a finished game is written
+once to `games/<id>.json` and also served at `/games/<id>.json`, so the viewer can open
+it with `?game=games/<id>.json`. `GET /api/games` merges the live games with finished
+games found on disk that are no longer in memory: the newest 25 overall, file-only rows
+marked `"saved": true` and dated by the file's modification time, unreadable or
+invalid files skipped. That is what lets the Recent games list survive a restart.
 
 ### Endpoints
 
 | method and path | what it does |
 |---|---|
 | `GET /api/bots` | bot types with parameter schemas, ranges, choices and defaults |
-| `GET /api/games` | games in memory, newest first |
+| `GET /api/games` | the newest 25 live and saved games, newest first; file-only rows have `"saved": true` |
 | `POST /api/games` | `{red, black, seed?, opening_plies?, start_fen?}`; creates the game and applies the seeded random opening |
 | `GET /api/games/{id}` | current state (`fen`, `side_to_move`, `players`, `legal_moves`, `in_check`, `last_move`, `moves`, `result`, `reason`, `plies`) |
 | `POST /api/games/{id}/move` | `{move: "h2e2"}`; human moves only, validated against the legal moves |
@@ -696,8 +700,10 @@ off) gets a separate "none / no limit" checkbox. Defaults come from the registry
 each parameter shows its help text. *Swap sides* exchanges the two choices. *Seed*
 and *Opening plies* are optional (empty seed = random, empty plies = the default 6).
 *Start game* posts to `/api/games`; a server `400` is shown under the form. Both
-sides Human disables *Start game* and says why. *Recent games* lists the games in
-the server's store; *Open in replay* loads one into the Replay screen.
+sides Human disables *Start game* and says why. *Recent games* lists the newest 25
+games, live and saved to disk (a game from before a restart is marked *saved*);
+*Open in replay* loads a live game through `/export` and a saved-only game from
+`games/<id>.json`.
 
 **Play** — the board is drawn from the API's `fen`; nothing in the page decides
 legality, check or the result. A square is clickable only if it is the from-square of
@@ -713,8 +719,9 @@ another such square to switch the selection, click a highlighted destination to 
 * Bot vs bot: *Play* / *Pause* / *Step* and a speed slider (0-2000 ms between moves).
   The page just calls `/step` repeatedly; there is no server-side loop. Play stops
   at game over, and Pause takes effect after the in-flight move returns.
-* Only one request runs at a time per game: the board and buttons are disabled and a
-  "Thinking… N s" line counts the elapsed time.
+* Only one request runs at a time per game: the board and the other buttons are
+  disabled (Pause stays live in bot vs bot, so a run can be stopped while the bot is
+  thinking) and a "Thinking… N s" line counts the elapsed time.
 * The search line shows what the last `/step` used: requested vs applied time limit,
   depth, nodes (or MCTS iterations) and eval. The move list scrolls.
 * Buttons: *Undo* (pairs of plies in human vs bot; never below the post-opening
@@ -750,8 +757,8 @@ selection, both board orientations, the auto-step decision, error messages) and
 `web/replay-core.js`.
 
 ```powershell
-.\.venv\Scripts\python.exe -m pytest -q     # 174 fast tests, including server + replay
-node web/tests/play-core.test.js            # 221 checks of the play logic
+.\.venv\Scripts\python.exe -m pytest -q     # 177 fast tests, including server + replay
+node web/tests/play-core.test.js            # 228 checks of the play logic
 node web/tests/replay-core.test.js          # 658 checks against engine fixtures
 ```
 

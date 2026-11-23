@@ -39,7 +39,8 @@
    * Mount the setup screen into ``container``.
    *
    * Options: ``api``, ``bots`` (from /api/bots), ``botsError``,
-   * ``onStart(redSpec, blackSpec, extra)`` and ``onOpenReplay(exportedGame)``.
+   * ``onStart(redSpec, blackSpec, extra)``, ``onOpenReplay(exportedGame)`` and
+   * ``loadGame(gameId, savedOnly)`` (which knows the /export and saved-file paths).
    * Returns a controller with ``refreshRecent()``.
    */
   function mount(container, options) {
@@ -141,6 +142,12 @@
       const row = element("div", "param");
       row.appendChild(element("span", "param-name", param.name));
 
+      // The input and the optional "none / no limit" box share one wrapping cell.
+      // If the card is narrow they stack instead of making the card wider, which is
+      // what used to push the control into the neighbouring fieldset.
+      const control = element("div", "param-control");
+      row.appendChild(control);
+
       let noneBox = null;
       let input = null;
 
@@ -153,6 +160,7 @@
         input.addEventListener("change", () => {
           side.values[param.name] = input.value;
         });
+        control.appendChild(input);
       } else if (param.type === "bool") {
         input = element("input", "param-input");
         input.type = "checkbox";
@@ -160,6 +168,7 @@
         input.addEventListener("change", () => {
           side.values[param.name] = input.checked;
         });
+        control.appendChild(input);
       } else {
         input = element("input", "param-input");
         input.type = "number";
@@ -177,20 +186,21 @@
             side.values[param.name] = input.value;
           }
         });
-      }
+        control.appendChild(input);
 
-      row.appendChild(input);
-
-      if (param.nullable) {
-        noneBox = element("input", "param-none");
-        noneBox.type = "checkbox";
-        noneBox.checked = side.values[param.name] === null;
-        input.disabled = noneBox.checked;
-        noneBox.addEventListener("change", () => {
+        if (param.nullable) {
+          noneBox = element("input", "param-none-box");
+          noneBox.type = "checkbox";
+          noneBox.checked = side.values[param.name] === null;
           input.disabled = noneBox.checked;
-          side.values[param.name] = noneBox.checked ? null : input.value;
-        });
-        row.appendChild(labelled("none / no limit", noneBox));
+          noneBox.addEventListener("change", () => {
+            input.disabled = noneBox.checked;
+            side.values[param.name] = noneBox.checked ? null : input.value;
+          });
+          const noneLabel = element("label", "param-none");
+          noneLabel.append(noneBox, document.createTextNode("none / no limit"));
+          control.appendChild(noneLabel);
+        }
       }
 
       row.appendChild(element("p", "param-help", param.help || ""));
@@ -317,12 +327,12 @@
 
     // -- recent games ---------------------------------------------------
 
-    async function openRecent(gameId, button) {
+    async function openRecent(entry, button) {
       button.disabled = true;
       showMessage("");
       try {
-        const exported = await options.api.get("games/" + gameId + "/export");
-        options.onOpenReplay(exported);
+        const game = await options.loadGame(entry.id, Boolean(entry.saved));
+        options.onOpenReplay(game);
       } catch (error) {
         showMessage(PlayCore.describeError(error), true);
       } finally {
@@ -358,11 +368,12 @@
         const meta =
           (game.result ? ReplayCore.resultLabel(game.result) : "in progress") +
           (game.reason ? " · " + ReplayCore.reasonLabel(game.reason) : "") +
-          " · " + game.plies + " plies";
+          " · " + game.plies + " plies" +
+          (game.saved ? " · saved" : "");
         row.appendChild(element("div", "recent-meta", meta));
         const open = element("button", "button-secondary", "Open in replay");
         open.type = "button";
-        open.addEventListener("click", () => openRecent(game.id, open));
+        open.addEventListener("click", () => openRecent(game, open));
         row.appendChild(open);
         list.appendChild(row);
       }

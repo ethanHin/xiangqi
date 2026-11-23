@@ -1,6 +1,12 @@
+[build-system]
+# The project lives in a flat layout with several top-level packages; setuptools
+# needs to be told which ones to install (web/ is static and tests/ is plugin data).
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "xiangqi"
-version = "0.1.0"
+version = "1.0.0"
 description = "Xiangqi (Chinese Chess) engine, search bots, match harness, and web app."
 requires-python = ">=3.11"
 dependencies = []
@@ -10,6 +16,9 @@ dev = ["pytest>=7.0", "ruff>=0.4"]
 server = ["fastapi", "uvicorn", "httpx"]
 web-tests = ["httpx"]
 plots = ["matplotlib"]
+
+[tool.setuptools]
+packages = ["bots", "engine", "eval", "harness", "server", "experiments"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

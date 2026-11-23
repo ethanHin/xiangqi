@@ -79,6 +79,7 @@
       this.lastSearch = null;
       this.letterMode = false;
       this.flipped = this.humanSide === "black";
+      this.pausePending = false;
       this.stepTimer = null;
       this.thinkingTimer = null;
       this.thinkingSince = 0;
@@ -247,7 +248,11 @@
       this.playButton.hidden = !botVsBot;
       this.stepButton.hidden = !botVsBot;
       this.speedControl.hidden = !botVsBot;
-      this.playButton.textContent = this.playing ? "❚❚ Pause" : "▶ Play";
+      this.playButton.textContent = this.pausePending
+        ? "⏸ Pausing…"
+        : this.playing
+          ? "❚❚ Pause"
+          : "▶ Play";
       this.resignButton.hidden = botVsBot;
       this.botMoveButton.hidden = botVsBot || over || !this.botToMove();
 
@@ -256,7 +261,14 @@
       this.newGameButton.disabled = this.busy;
       this.replayButton.disabled = blocked;
       this.downloadButton.disabled = blocked;
-      this.playButton.disabled = blocked || over;
+      // Pause stays clickable while a bot is thinking: it stops the loop as soon as
+      // the in-flight move returns (see PlayCore.playToggleEnabled).
+      this.playButton.disabled = !PlayCore.playToggleEnabled({
+        playing: this.playing,
+        busy: this.busy,
+        gone: this.gone,
+        over: over,
+      });
       this.stepButton.disabled = blocked || over;
       this.botMoveButton.disabled = blocked || over;
       this.boardHolder.classList.toggle("is-busy", this.busy);
@@ -330,6 +342,7 @@
           this.thinkingTimer = null;
         }
         this.thinking.hidden = true;
+        this.pausePending = false;
       }
       this.render();
     }
@@ -449,12 +462,16 @@
         return;
       }
       this.playing = true;
+      this.pausePending = false;
       this.renderButtons();
       this.stepOnce();
     }
 
     pause() {
+      const wasPlaying = this.playing;
       this.playing = false;
+      // Pressing Pause during a request: keep showing "Pausing…" until it returns.
+      this.pausePending = Boolean(wasPlaying && this.busy);
       if (this.stepTimer) {
         clearTimeout(this.stepTimer);
         this.stepTimer = null;

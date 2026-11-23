@@ -4,6 +4,8 @@ One ``Game`` holds the board, the recorded moves, the two player specs, and a lo
 The store keeps games in a dictionary keyed by a random id, caps how many it holds
 (evicting finished games first), and writes a finished game to ``games/`` exactly once
 (and again only if an undo is followed by a new finish, overwriting the same file).
+``list()`` also reports finished games found on disk but no longer in memory, so the
+Recent games list survives a server restart.
 
 Everything about the rules is delegated: the random opening is
 ``harness.match.play_random_opening``, a bot move is ``harness.match.play_bot_move``
@@ -13,6 +15,7 @@ Everything about the rules is delegated: the random opening is
 
 from __future__ import annotations
 
+import json
 import threading
 import time
 import uuid
@@ -39,6 +42,12 @@ SERVER_MAX_MOVE_MS = 10_000.0
 
 # How many games the in-memory store keeps before evicting (finished games first).
 MAX_GAMES = 200
+
+# GET /api/games returns at most this many rows, live and saved together.
+LIST_LIMIT = 25
+
+# Results a saved Game JSON may carry; anything else is not a finished game.
+_SAVED_RESULTS = ("red_win", "black_win", "draw")
 
 # Where finished games are written (Game JSON), relative to the working directory.
 SAVE_DIR = Path("games")
@@ -251,6 +260,47 @@ def _clamp_time(requested: float | None) -> float:
     return min(float(requested), SERVER_MAX_MOVE_MS)
 
 
+def _saved_game_summaries(save_dir: Path) -> list[dict[str, Any]]:
+    """Rows for finished games under ``save_dir``, for GET /api/games.
+
+    Only the fields the list endpoint needs are read. A file that is not a valid
+    game JSON (or cannot be read) is skipped rather than breaking the list, since
+    the directory is runtime data. ``created`` comes from the file's modification
+    time: the Game JSON schema stores no creation timestamp.
+    """
+    summaries: list[dict[str, Any]] = []
+    for path in sorted(Path(save_dir).glob("*.json")):
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            modified = path.stat().st_mtime
+        except (OSError, ValueError):
+            continue
+        if not isinstance(data, dict):
+            continue
+        red, black = data.get("red"), data.get("black")
+        result, reason, plies = data.get("result"), data.get("reason"), data.get("plies")
+        if not (isinstance(red, dict) and isinstance(black, dict)):
+            continue
+        if not (isinstance(red.get("type"), str) and isinstance(black.get("type"), str)):
+            continue
+        if result not in _SAVED_RESULTS or not isinstance(reason, str) or not reason:
+            continue
+        if not isinstance(plies, int) or isinstance(plies, bool) or plies < 0:
+            continue
+        summaries.append(
+            {
+                "id": path.stem,
+                "players": {"red": red, "black": black},
+                "result": result,
+                "reason": reason,
+                "plies": plies,
+                "created": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(modified)),
+                "saved": True,
+            }
+        )
+    return summaries
+
+
 class GameStore:
     """A thread-safe dictionary of live games with a size cap."""
 
@@ -313,10 +363,16 @@ class GameStore:
             return self._games[game_id]
 
     def list(self) -> list[dict[str, Any]]:
-        """All games, newest first, as summary rows."""
+        """The newest live and saved games, as summary rows.
+
+        Live games are marked ``saved: False``; a finished game found only on disk is
+        marked ``saved: True`` and appears once even when a live copy also exists.
+        Saved-only rows use the file's modification time as ``created``. At most
+        ``LIST_LIMIT`` rows are returned, newest first.
+        """
         with self._lock:
-            games = sorted(self._games.values(), key=lambda game: game.created, reverse=True)
-        return [
+            live = sorted(self._games.values(), key=lambda game: game.created, reverse=True)
+        rows = [
             {
                 "id": game.id,
                 "players": {"red": game.red, "black": game.black},
@@ -324,9 +380,16 @@ class GameStore:
                 "reason": game.record.reason,
                 "plies": game.record.plies,
                 "created": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(game.created)),
+                "saved": False,
             }
-            for game in games
+            for game in live
         ]
+        live_ids = {row["id"] for row in rows}
+        rows.extend(
+            row for row in _saved_game_summaries(self.save_dir) if row["id"] not in live_ids
+        )
+        rows.sort(key=lambda row: row["created"], reverse=True)
+        return rows[:LIST_LIMIT]
 
     def _evict_if_needed(self) -> None:
         """Under the store lock: drop finished games first, then the oldest (see class doc)."""

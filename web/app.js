@@ -16,6 +16,10 @@
   // Relative to the document, so it works on any host and port: "api/bots" resolves
   // against the page URL. This is the only place a path prefix is named.
   const API_BASE = "api";
+
+  // Finished games are also served as static JSON files (/games/<id>.json), so the
+  // Replay screen can open one after the server has forgotten it.
+  const GAMES_BASE = "games";
   const SCREENS = ["setup", "play", "replay"];
 
   const state = {
@@ -74,6 +78,47 @@
     get: (path) => request("GET", path),
     post: (path, body) => request("POST", path, body),
   };
+
+  /** Fetch a saved game's JSON from the static /games/ mount (no API involved). */
+  async function fetchSavedGame(gameId) {
+    let response;
+    try {
+      response = await fetch(GAMES_BASE + "/" + gameId + ".json");
+    } catch (error) {
+      throw new ApiError("network", 0, error.message);
+    }
+    let payload = null;
+    try {
+      payload = await response.json();
+    } catch (error) {
+      payload = null;
+    }
+    if (!response.ok || !payload) {
+      throw new ApiError("http", response.status, response.statusText);
+    }
+    return payload;
+  }
+
+  /**
+   * Load a game for the Replay screen.
+   *
+   * A game still in memory is fetched through `/export`. A saved-only game (the
+   * server was restarted, or the live copy was evicted) is read from
+   * `games/<id>.json`; that fallback also covers a live game that disappears between
+   * the list and the click.
+   */
+  async function loadGameForReplay(gameId, savedOnly) {
+    if (!savedOnly) {
+      try {
+        return await api.get("games/" + gameId + "/export");
+      } catch (error) {
+        if (error.status !== 404) {
+          throw error;
+        }
+      }
+    }
+    return fetchSavedGame(gameId);
+  }
 
   // ---------------------------------------------------------------------------
   // Screens
@@ -219,6 +264,7 @@
       botsError: state.botsError,
       onStart: startGame,
       onOpenReplay: (exported) => openReplay(exported, false),
+      loadGame: loadGameForReplay,
     });
   }
 
@@ -231,6 +277,7 @@
     openGame: openGame,
     openReplay: openReplay,
     startGame: startGame,
+    loadGameForReplay: loadGameForReplay,
     humanSideOf: humanSideOf,
   };
 

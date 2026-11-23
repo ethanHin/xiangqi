@@ -8,6 +8,7 @@ committed ``games/`` folder.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 from concurrent.futures import ThreadPoolExecutor
@@ -458,7 +459,91 @@ def test_game_list_is_newest_first(client: TestClient) -> None:
     second = create(client, human(), bot("random"), seed=32, opening_plies=0)
     listed = client.get("/api/games").json()["games"]
     assert [entry["id"] for entry in listed[:2]] == [second["id"], first["id"]]
-    assert set(listed[0]) == {"id", "players", "result", "reason", "plies", "created"}
+    assert set(listed[0]) == {
+        "id",
+        "players",
+        "result",
+        "reason",
+        "plies",
+        "created",
+        "saved",
+    }
+    assert listed[0]["saved"] is False
+
+
+def _write_saved_game(
+    save_dir: Path,
+    game_id: str,
+    *,
+    modified: float = 1_700_000_100.0,
+    **overrides,
+) -> Path:
+    """Write a valid finished Game JSON under ``save_dir`` with a fixed mtime."""
+    save_dir.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "id": game_id,
+        "red": bot("alphabeta", depth=2),
+        "black": human(),
+        "seed": 7,
+        "start_fen": Board.start().to_fen(),
+        "opening_moves": [],
+        "moves": [],
+        "result": "red_win",
+        "reason": "checkmate",
+        "plies": 9,
+    }
+    payload.update(overrides)
+    path = save_dir / f"{game_id}.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    os.utime(path, (modified, modified))
+    return path
+
+
+def test_game_list_includes_saved_games_after_a_restart(client: TestClient, tmp_path) -> None:
+    # A "restart" is a fresh in-memory store over the same save directory: the game
+    # exists only as games/<id>.json, as far as the server is concerned.
+    save_dir = tmp_path / "games"
+    game_id = "saved0000001"
+    _write_saved_game(save_dir, game_id, modified=1_700_000_100.0)
+
+    listed = client.get("/api/games").json()["games"]
+    entry = next(row for row in listed if row["id"] == game_id)
+    assert entry["saved"] is True
+    assert entry["players"] == {"red": bot("alphabeta", depth=2), "black": human()}
+    assert entry["result"] == "red_win"
+    assert entry["reason"] == "checkmate"
+    assert entry["plies"] == 9
+    # created comes from the file's modification time (2023-11-14T22:15:00Z).
+    assert entry["created"] == "2023-11-14T22:15:00Z"
+
+
+def test_saved_scan_skips_invalid_files_and_live_duplicates(client: TestClient, tmp_path) -> None:
+    save_dir = tmp_path / "games"
+    game = create(client, human(), bot("random"), seed=3, opening_plies=0)
+    response = client.post(f"/api/games/{game['id']}/resign", json={"color": "red"})
+    assert response.status_code == 200, response.text
+    assert (save_dir / f"{game['id']}.json").is_file()
+
+    (save_dir / "broken.json").write_text("{not json", encoding="utf-8")
+    (save_dir / "notagame.json").write_text(json.dumps({"hello": "world"}), encoding="utf-8")
+
+    listed = client.get("/api/games").json()["games"]
+    ids = [row["id"] for row in listed]
+    assert ids.count(game["id"]) == 1
+    assert next(row for row in listed if row["id"] == game["id"])["saved"] is False
+    assert "broken" not in ids
+    assert "notagame" not in ids
+
+
+def test_game_list_is_capped_at_25_newest(client: TestClient, tmp_path) -> None:
+    save_dir = tmp_path / "games"
+    for index in range(30):
+        _write_saved_game(save_dir, f"saved{index:07d}", modified=1_700_000_000.0 + index)
+
+    listed = client.get("/api/games").json()["games"]
+    assert len(listed) == 25
+    assert {row["id"] for row in listed} == {f"saved{index:07d}" for index in range(5, 30)}
+    assert listed[0]["id"] == "saved0000029"
 
 
 class _ScriptedBot:
@@ -522,6 +607,9 @@ def test_store_cap_evicts_finished_games_first(tmp_path) -> None:
     first.resign("red")  # mark the oldest as finished
     third = store.create(red, black, seed=3, opening_plies=0)
 
-    ids = {entry["id"] for entry in store.list()}
-    assert first.id not in ids
-    assert {second.id, third.id} <= ids
+    ids = {entry["id"]: entry for entry in store.list()}
+    # The finished game left memory but its saved file is still listed.
+    assert ids[first.id]["saved"] is True
+    assert ids[second.id]["saved"] is False
+    assert ids[third.id]["saved"] is False
+    assert {second.id, third.id} <= set(ids)

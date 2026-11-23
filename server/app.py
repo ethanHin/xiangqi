@@ -28,7 +28,7 @@ WEB_DIR = Path(__file__).resolve().parent.parent / "web"
 
 app = FastAPI(
     title="Xiangqi live play",
-    version="0.1.0",
+    version="1.0.0",
     description=(
         "Local single-user server for bot-vs-bot and human-vs-bot Xiangqi games. "
         "The rules, the search and the game loop come from the engine and the harness; "
@@ -118,7 +118,7 @@ def list_bots() -> dict[str, Any]:
 
 @app.get("/api/games")
 def list_games() -> dict[str, Any]:
-    """All games in memory, newest first."""
+    """The newest live and saved games (at most 25), newest first."""
     return {"games": games.STORE.list()}
 
 

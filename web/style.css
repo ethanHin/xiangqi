@@ -184,7 +184,7 @@ button:disabled {
 
 .setup-form {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
   gap: 16px;
   align-items: start;
 }
@@ -196,6 +196,7 @@ button:disabled {
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--panel);
+  min-width: 0;
 }
 
 .player-side legend,
@@ -236,15 +237,18 @@ button:disabled {
   margin-top: 10px;
   border-top: 1px solid var(--line);
   padding-top: 8px;
+  min-width: 0;
 }
 
 .param {
   display: grid;
-  grid-template-columns: 9em 9em auto;
-  gap: 4px 8px;
+  /* name | control; the control wraps its input and its "none" box on narrow cards */
+  grid-template-columns: 9em minmax(0, 1fr);
+  gap: 4px 10px;
   align-items: center;
-  margin-bottom: 8px;
+  margin-bottom: 10px;
   font-size: 0.88rem;
+  min-width: 0;
 }
 
 .param-name {
@@ -253,13 +257,44 @@ button:disabled {
   font-size: 0.82rem;
 }
 
+.param-control {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  min-width: 0;
+}
+
 .param-input {
   font: inherit;
   padding: 4px 6px;
   border: 1px solid var(--line);
   border-radius: 6px;
-  width: 100%;
-  max-width: 9em;
+  width: 9em;
+  max-width: 100%;
+}
+
+.param-input[type="checkbox"] {
+  width: auto;
+}
+
+.param-input:disabled {
+  background: #f1ece2;
+  color: var(--muted);
+  cursor: not-allowed;
+}
+
+.param-none {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.78rem;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.param-none-box {
+  margin: 0;
 }
 
 .param-help {
@@ -267,6 +302,8 @@ button:disabled {
   margin: 0;
   color: var(--muted);
   font-size: 0.78rem;
+  min-width: 0;
+  overflow-wrap: break-word;
 }
 
 .setup-actions {

@@ -202,6 +202,23 @@
     return context.lastAction !== "undo";
   }
 
+  /**
+   * Whether the Play/Pause button may be pressed.
+   *
+   * Pause must stay live while a bot is thinking, so the loop stops as soon as the
+   * in-flight move returns; that is the only control allowed during a request.
+   * Starting another move while one is already pending is never allowed.
+   */
+  function playToggleEnabled(context) {
+    if (context.gone || context.over) {
+      return false;
+    }
+    if (!context.playing && context.busy) {
+      return false;
+    }
+    return true;
+  }
+
   /** A sentence for an API failure, so the message area is always useful. */
   function describeError(error) {
     if (!error) {
@@ -259,6 +276,7 @@
     coerceParam: coerceParam,
     buildPlayerSpec: buildPlayerSpec,
     shouldAutoStep: shouldAutoStep,
+    playToggleEnabled: playToggleEnabled,
     describeError: describeError,
     formatSearch: formatSearch,
   };
