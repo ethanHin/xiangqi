@@ -5,8 +5,8 @@ experiment suite, and a local web app for human-vs-bot and bot-vs-bot play with
 replay.
 
 **Status: M1 (engine core), M2 (baselines and match harness), M3 (alpha-beta), M4
-(evaluation), M5 (plain MCTS) and M6 (experiments) complete.** M7 and M8 (replay
-viewer, live play server and web UI) are described in `AGENTS.md`.
+(evaluation), M5 (plain MCTS), M6 (experiments) and M7 (replay viewer) complete.**
+M8 (live play server and web UI) is described in `AGENTS.md`.
 
 ## Quick start
 
@@ -64,6 +64,13 @@ experiments/       # M6 experiments and their committed evidence
   common.py          # flags, streaming CSV, Wilson interval, plots
   README.md          # commands, timings, CSV column guide
   results/           # CSVs, PNGs and (gitignored) per-game JSON
+web/               # static replay viewer (opens from file:// or any static server)
+  index.html       # page shell: loader + #replay-root
+  replay-core.js   # pure logic: FEN, moves, timeline, display helpers
+  board.js         # SVG board drawing
+  replay.js        # viewer screen: controls, move list, loaders
+  style.css
+  tests/           # node web/tests/replay-core.test.js
 tests/             # pytest suite, including the fixed position sets
   positions_middlegame.txt
   positions_transpositions.txt
@@ -556,6 +563,62 @@ stalemates (also a win), 2 move-cap draws. Reproduce with
 random (a 300-ply cap draw), and an 8-ply perpetual check. Regenerate them with
 `python -m tools.make_samples`.
 
+## Replay viewer (M7)
+
+`web/index.html` is the replay screen: it loads a saved Game JSON and steps through
+it. No server is needed for the normal case, no network is touched, and there is no
+rules logic — the board is built from `start_fen` plus the recorded moves, and the
+result and reason are read from the file.
+
+```bash
+# 1. by double-clicking (file picker or drag-and-drop)
+start web/index.html
+
+# 2. over HTTP, which also enables ?game=<path>
+python -m http.server 8000
+# then open (note the path is relative to web/)
+# http://localhost:8000/web/index.html?game=../games/samples/sample-checkmate.json
+```
+
+A page opened from `file://` cannot `fetch()` local files, so with `?game=` in that
+mode the viewer explains the two alternatives instead of failing silently.
+
+**Samples** in `games/samples/`, one per ending:
+
+| file | what it shows |
+|---|---|
+| `sample-checkmate.json` | 9 plies, checkmate (alpha-beta 2 vs 1, per-move stats) |
+| `sample-stalemate.json` | 44 plies, stalemate — a loss in Xiangqi |
+| `sample-alpha-beta.json` | 54 plies, perpetual-check loss with depth/nodes/eval on every move |
+| `sample-perpetual-check.json` | 8 plies, scripted perpetual check |
+| `sample-move-cap-draw.json` | 300 plies, draw by the move cap |
+| `sample-greedy-vs-random.json` | 197 plies, checkmate with zero depth/nodes/eval |
+
+**Controls:** First / Prev / Play / Next / Last, a speed selector (0.5x to 4x), a ply
+slider, and a clickable move list. Keyboard: `←` `→` step, `Home` / `End` jump,
+`Space` play/pause. The checkbox switches the pieces between Chinese characters and
+FEN letters for fonts that lack the glyphs. The header shows both players (derived
+from the player spec), seed, result, reason, plies and the start FEN, and the
+opening moves are listed and replayed when they reproduce `start_fen` exactly. The
+status line names the ply, the side that moved, the ICCS move and any per-move
+time/nodes/depth/eval, and at the last ply a banner shows the result and reason.
+The two squares of the last move are highlighted.
+
+The viewer checks only what it needs to draw a position: the JSON parses, the FEN has
+ten ranks, a move is four characters, both squares are on the board, they differ, and
+the from-square is not empty. Everything else about the game is trusted from the
+file — no legality checks, no result inference.
+
+The reusable entry point is `Replay.mount(container, game)`, which M8's replay screen
+calls; the file-picker, drag-and-drop and `?game=` code is separate. Tests:
+
+```bash
+pytest tests/test_replay.py            # samples, fixtures, offline constraints
+node web/tests/replay-core.test.js     # JS timeline vs engine-generated fixtures
+```
+
+There is no eval-per-ply chart (it was the optional part of M7 and is not built).
+
 ## Perft
 
 Reference node counts from the standard starting position:
@@ -580,7 +643,7 @@ become a cannon's screen), which is what took depth 4 from 23 s in M1 to 5 s.
 - ~~M4 evaluation (material, piece-square tables, mobility, king safety)~~ (done)
 - ~~M5 plain MCTS~~ (done)
 - ~~M6 experiments (depth scaling, heuristic comparison)~~ (done)
-- M7 replay viewer
+- ~~M7 replay viewer~~ (done)
 - M8 live play server and web UI
 
 AlphaZero-style neural MCTS is explicitly future work and has no code here.

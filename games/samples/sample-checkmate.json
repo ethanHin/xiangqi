@@ -1,0 +1,55 @@
+{
+  "id": "sample-checkmate",
+  "red": {
+    "type": "alphabeta",
+    "params": {
+      "depth": 2,
+      "time_limit_ms": null,
+      "evaluator": "full"
+    }
+  },
+  "black": {
+    "type": "alphabeta",
+    "params": {
+      "depth": 1,
+      "time_limit_ms": null,
+      "evaluator": "full"
+    }
+  },
+  "seed": 13,
+  "start_fen": "rCbak2nr/4a4/1c5c1/p1p1p1p1p/6b2/C8/P1P1P1P1P/9/9/RNBAKABNR w - - 0 1",
+  "opening_moves": [
+    "h2h4",
+    "g9e7",
+    "b2b9",
+    "f9e8",
+    "h4a4",
+    "e7g5"
+  ],
+  "moves": [
+    {
+      "move": "a4a9",
+      "time_ms": 15.67,
+      "nodes": 133,
+      "depth": 2,
+      "eval": 1245
+    },
+    {
+      "move": "e6e5",
+      "time_ms": 5.63,
+      "nodes": 41,
+      "depth": 1,
+      "eval": -1245
+    },
+    {
+      "move": "a9c9",
+      "time_ms": 5.98,
+      "nodes": 25,
+      "depth": 1,
+      "eval": 99999
+    }
+  ],
+  "result": "red_win",
+  "reason": "checkmate",
+  "plies": 9
+}

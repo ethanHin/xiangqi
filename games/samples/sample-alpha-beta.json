@@ -1,0 +1,370 @@
+{
+  "id": "sample-alpha-beta",
+  "red": {
+    "type": "alphabeta",
+    "params": {
+      "depth": 3,
+      "time_limit_ms": null,
+      "evaluator": "full"
+    }
+  },
+  "black": {
+    "type": "alphabeta",
+    "params": {
+      "depth": 2,
+      "time_limit_ms": null,
+      "evaluator": "full"
+    }
+  },
+  "seed": 12,
+  "start_fen": "rnbakabnr/9/9/p1p1p1p1p/9/3c5/PcP1P1P1P/CC7/9/RNBAKABNR w - - 0 1",
+  "opening_moves": [
+    "b2a2",
+    "b7b3",
+    "h2d2",
+    "h7d7",
+    "d2b2",
+    "d7d4"
+  ],
+  "moves": [
+    {
+      "move": "b0c2",
+      "time_ms": 221.69,
+      "nodes": 1413,
+      "depth": 3,
+      "eval": 64
+    },
+    {
+      "move": "b9c7",
+      "time_ms": 39.77,
+      "nodes": 244,
+      "depth": 2,
+      "eval": -64
+    },
+    {
+      "move": "c3c4",
+      "time_ms": 322.15,
+      "nodes": 2044,
+      "depth": 3,
+      "eval": 74
+    },
+    {
+      "move": "d4d8",
+      "time_ms": 37.59,
+      "nodes": 236,
+      "depth": 2,
+      "eval": -74
+    },
+    {
+      "move": "e3e4",
+      "time_ms": 257.18,
+      "nodes": 1598,
+      "depth": 3,
+      "eval": 77
+    },
+    {
+      "move": "h9g7",
+      "time_ms": 59.23,
+      "nodes": 357,
+      "depth": 2,
+      "eval": -77
+    },
+    {
+      "move": "c2d4",
+      "time_ms": 478.45,
+      "nodes": 2845,
+      "depth": 3,
+      "eval": 90
+    },
+    {
+      "move": "i9h9",
+      "time_ms": 62.43,
+      "nodes": 337,
+      "depth": 2,
+      "eval": -90
+    },
+    {
+      "move": "c4c5",
+      "time_ms": 578.75,
+      "nodes": 3658,
+      "depth": 3,
+      "eval": 214
+    },
+    {
+      "move": "b3b4",
+      "time_ms": 47.58,
+      "nodes": 313,
+      "depth": 2,
+      "eval": -214
+    },
+    {
+      "move": "c5c6",
+      "time_ms": 487.33,
+      "nodes": 3184,
+      "depth": 3,
+      "eval": 339
+    },
+    {
+      "move": "c7a8",
+      "time_ms": 38.14,
+      "nodes": 286,
+      "depth": 2,
+      "eval": -339
+    },
+    {
+      "move": "a2a6",
+      "time_ms": 460.01,
+      "nodes": 2804,
+      "depth": 3,
+      "eval": 727
+    },
+    {
+      "move": "a8b6",
+      "time_ms": 31.94,
+      "nodes": 256,
+      "depth": 2,
+      "eval": -727
+    },
+    {
+      "move": "c6b6",
+      "time_ms": 319.43,
+      "nodes": 1986,
+      "depth": 3,
+      "eval": 706
+    },
+    {
+      "move": "b4e4",
+      "time_ms": 38.23,
+      "nodes": 240,
+      "depth": 2,
+      "eval": -706
+    },
+    {
+      "move": "a0a1",
+      "time_ms": 640.8,
+      "nodes": 4059,
+      "depth": 3,
+      "eval": 702
+    },
+    {
+      "move": "h9h2",
+      "time_ms": 74.28,
+      "nodes": 483,
+      "depth": 2,
+      "eval": -702
+    },
+    {
+      "move": "b2g2",
+      "time_ms": 435.46,
+      "nodes": 2773,
+      "depth": 3,
+      "eval": 695
+    },
+    {
+      "move": "e6e5",
+      "time_ms": 49.48,
+      "nodes": 379,
+      "depth": 2,
+      "eval": -695
+    },
+    {
+      "move": "a1c1",
+      "time_ms": 596.55,
+      "nodes": 4088,
+      "depth": 3,
+      "eval": 814
+    },
+    {
+      "move": "g6g5",
+      "time_ms": 65.31,
+      "nodes": 436,
+      "depth": 2,
+      "eval": -814
+    },
+    {
+      "move": "c1c8",
+      "time_ms": 838.12,
+      "nodes": 5575,
+      "depth": 3,
+      "eval": 820
+    },
+    {
+      "move": "d8d7",
+      "time_ms": 51.48,
+      "nodes": 288,
+      "depth": 2,
+      "eval": -820
+    },
+    {
+      "move": "c8c7",
+      "time_ms": 826.81,
+      "nodes": 5515,
+      "depth": 3,
+      "eval": 821
+    },
+    {
+      "move": "d7d0",
+      "time_ms": 30.09,
+      "nodes": 237,
+      "depth": 2,
+      "eval": -821
+    },
+    {
+      "move": "e0d0",
+      "time_ms": 303.87,
+      "nodes": 2169,
+      "depth": 3,
+      "eval": 1047
+    },
+    {
+      "move": "g7f5",
+      "time_ms": 97.67,
+      "nodes": 634,
+      "depth": 2,
+      "eval": -1047
+    },
+    {
+      "move": "a6i6",
+      "time_ms": 786.94,
+      "nodes": 5720,
+      "depth": 3,
+      "eval": 1039
+    },
+    {
+      "move": "a9a3",
+      "time_ms": 34.14,
+      "nodes": 273,
+      "depth": 2,
+      "eval": -1039
+    },
+    {
+      "move": "c7c9",
+      "time_ms": 796.84,
+      "nodes": 5440,
+      "depth": 3,
+      "eval": 1052
+    },
+    {
+      "move": "a3d3",
+      "time_ms": 36.44,
+      "nodes": 222,
+      "depth": 2,
+      "eval": -1052
+    },
+    {
+      "move": "d0e0",
+      "time_ms": 33.02,
+      "nodes": 196,
+      "depth": 3,
+      "eval": 860
+    },
+    {
+      "move": "d3d4",
+      "time_ms": 32.1,
+      "nodes": 187,
+      "depth": 2,
+      "eval": -860
+    },
+    {
+      "move": "g2g5",
+      "time_ms": 489.3,
+      "nodes": 3255,
+      "depth": 3,
+      "eval": 748
+    },
+    {
+      "move": "f5e3",
+      "time_ms": 35.17,
+      "nodes": 209,
+      "depth": 2,
+      "eval": -748
+    },
+    {
+      "move": "f0e1",
+      "time_ms": 110.05,
+      "nodes": 674,
+      "depth": 3,
+      "eval": 754
+    },
+    {
+      "move": "e3c2",
+      "time_ms": 42.69,
+      "nodes": 230,
+      "depth": 2,
+      "eval": -754
+    },
+    {
+      "move": "e1d2",
+      "time_ms": 97.77,
+      "nodes": 663,
+      "depth": 3,
+      "eval": 753
+    },
+    {
+      "move": "h2e2",
+      "time_ms": 34.45,
+      "nodes": 236,
+      "depth": 2,
+      "eval": -753
+    },
+    {
+      "move": "e0f0",
+      "time_ms": 49.09,
+      "nodes": 367,
+      "depth": 3,
+      "eval": 738
+    },
+    {
+      "move": "e2f2",
+      "time_ms": 20.91,
+      "nodes": 176,
+      "depth": 2,
+      "eval": -738
+    },
+    {
+      "move": "f0e0",
+      "time_ms": 17.94,
+      "nodes": 152,
+      "depth": 3,
+      "eval": 0
+    },
+    {
+      "move": "f2e2",
+      "time_ms": 17.63,
+      "nodes": 149,
+      "depth": 2,
+      "eval": 0
+    },
+    {
+      "move": "e0f0",
+      "time_ms": 1.51,
+      "nodes": 76,
+      "depth": 3,
+      "eval": 0
+    },
+    {
+      "move": "e2f2",
+      "time_ms": 0.37,
+      "nodes": 62,
+      "depth": 2,
+      "eval": 0
+    },
+    {
+      "move": "f0e0",
+      "time_ms": 0.62,
+      "nodes": 3,
+      "depth": 3,
+      "eval": 0
+    },
+    {
+      "move": "f2e2",
+      "time_ms": 0.41,
+      "nodes": 76,
+      "depth": 2,
+      "eval": 0
+    }
+  ],
+  "result": "red_win",
+  "reason": "perpetual_check",
+  "plies": 54
+}
