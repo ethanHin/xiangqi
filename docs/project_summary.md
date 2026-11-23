@@ -16,7 +16,7 @@ The **state space** is every position that could ever occur; no program enumerat
 
 ### Actions and branching
 
-An **action** is a legal move. Red has **44** at the start. Across the 150 alpha-beta self-play games of the final depth-scaling run, `tools/branching_stats.py` counted **11,297 positions** averaging **31.9** legal moves (median 34, minimum 1, maximum 88), falling from 37.85 in plies (half-moves) 0–19 to 23.00 after ply 60.
+An **action** is a legal move. Red has **44** at the start. Across the 150 fixed-depth 1–4 alpha-beta self-play games of the final depth-scaling run (random opening plies excluded, because the tool starts from `start_fen`), `tools/branching_stats.py` counted **11,297 positions** averaging **31.9** legal moves (median 34, minimum 1, maximum 88), falling from 37.85 in plies (half-moves) 0–19 to 23.00 after ply 60.
 
 **Perft** counts leaf positions at a given depth and verifies the move generator: 44 at depth 1, 1,920 at depth 2, 79,666 at depth 3 and 3,290,240 at depth 4, multiplying by roughly 41–44 per extra ply near the opening. Plain minimax to depth 3 therefore visits tens of thousands of positions, which is why pruning matters. Source: `docs/experiment_log.md` (problem definition) and `README.md` (perft table).
 
@@ -156,7 +156,7 @@ Source: `experiments/results/heuristic-comparison-20261123-054636/heuristic-comp
 
 Source: `docs/experiment_log.md` (row B); `experiments/results/heuristic-comparison-20261123-054636/heuristic-comparison-20261123-054636-summary.csv`.
 
-**What it shows:** the estimate favours `full`, but the interval includes 0.5, so it is **open**; `material` reaches 0.72 plies deeper, and the positional terms probably compensate. **Caveat:** time-limited games vary (pilot 0.15 for `full`).
+**What it shows:** the estimate favours `full`, but the interval includes 0.5, so it is **open**; `material` reaches 0.72 plies deeper, and the positional terms probably compensate. **Caveat:** time-limited games vary: two 10-game runs scored 0.15 (discarded) and 0.55, while the 100-game run scored 0.54 [0.44–0.63].
 
 ### (e) Pilots versus final runs
 
@@ -164,17 +164,17 @@ Source: `docs/experiment_log.md` (row B); `experiments/results/heuristic-compari
 |---|---|---|
 | depth 3 vs 4 (deeper score) | 0.70 [0.40–0.89] | 0.81 [0.68–0.89] (50 games) |
 | `full` vs `material_pst` (full's score) | 0.20 (2–0–8) | 0.465 (44–5–51) (100 games) |
-| `full` vs `material` at 750 ms (full's score) | 0.15 | 0.54 [0.44–0.63] (100 games) |
+| `full` vs `material` at 750 ms (full's score) | 0.15 (discarded run) and 0.55 (committed pilot), both 10 games | 0.54 [0.44–0.63] (100 games) |
 
 Source: `docs/experiment_log.md` pilot and final entries; pilot summary CSVs `depth-scaling-20261123-050011-summary.csv` and `heuristic-comparison-20261123-051132-summary.csv` (under their run folders); final CSVs above.
 
-The pilot's 0.20 for `full` became 0.465 vs 0.535 at 100 games, interval spanning 0.5. Ten games are a smoke test.
+The 0.15 run was an earlier 10-game run discarded because a bug left its summary CSV header-only (its per-game CSV was valid); the committed 10-game pilot scored 0.55. Two 10-game runs of the same setup gave 0.15 and 0.55, which shows how much 10 games can swing. The `full` vs `material_pst` pilot also moved: 0.20 at 10 games became 0.465 vs 0.535 at 100 games, interval spanning 0.5. Ten games are a smoke test.
 
 ### (f) Supporting measurements
 
 - **Perft (M1):** 44 / 1,920 / 79,666 / 3,290,240, verifying move generation.
 - **Node counts (M3):** depth 3, 50 middlegame positions: minimax 3,056,865 → alpha-beta 430,538 → ordering 84,905, values identical; sparse-endgame depth 4 TT 10,260 → 8,476; middlegame depth 3 TT neutral. Quiescence changes values only with captures.
-- **Greedy tuning (M2):** fixed first move 0% vs random (10); seeded random 80% (20); checks **hurt** (80% → 70%); MVV-LVA 95%; mate-in-one 98% (100, 98W 2D 0L); the 95% “before” came from a 20-game sample, so that pair is not a matched comparison.
+- **Greedy tuning (M2):** fixed first move 0% vs random (10 games); seeded random 80% (20 games); checks **hurt** (80% → 70%); MVV-LVA 95%; mate-in-one 98% (100 games, 98W 2D 0L); the 95% “before” came from a 20-game sample, so that pair is not a matched comparison.
 - **Evaluator smoke check (M4 v2):** depth 2, 10 games each: win rate `material_pst` 50%, `material_pst_mobility` 80%, `full` 90% — wiring only.
 - **MCTS sweeps (M5):** vs greedy, 10 games per arm: 100 iterations 10%, 400 40%, 1,600 70%; exploration 0.7 80%, 1.4 40%, 2.0 30% (400 iterations). Defaults kept: 10 games cannot rank settings.
 - **Alpha-beta at the 200 ms cap (M3):** 201 ms/move (p95 226), depth 2.59, 2,291 nodes/move; 1,070 of 2,116 moves reached depth 3+.
@@ -185,25 +185,33 @@ Source: `README.md` (perft, node counts, MCTS sweeps, M3 acceptance) and `docs/e
 
 | tweak | effect | verdict |
 |---|---|---|
-| Greedy tie-break: fixed → seeded random | vs random 0% (10) → 80% (20) | HELPED |
-| Greedy: prefer checks | 80% → 70% | HURT |
-| Greedy: MVV-LVA | 70% → 95% | HELPED |
+| Greedy tie-break: fixed → seeded random | vs random 0% (10 games) → 80% (20 games) | HELPED |
+| Greedy: prefer checks | 80% → 70% (20 games) | HURT |
+| Greedy: MVV-LVA | 70% (prefer-checks baseline, 20 games) → 95% (20 games) | HELPED |
 | Greedy: mate-in-one | 95% (20-game sample) → 98% (100 games); not matched | HELPED |
+| Two-tier legality filter, first attempt | perft depth 2 1,920 → 1,926; depth 3 79,666 → 80,062 | HURT |
+| Cannon-screen guard (the fix) | perft depth 4 time 22.9 s → 5.0 s | HELPED |
 | Alpha-beta | depth-3 nodes 3,056,865 → 430,538 | HELPED |
 | Move ordering | 430,538 → 84,905 | HELPED |
-| `full` evaluator cost | 2.31 → 62.29 µs per evaluation | HURT (cost) |
+| Transposition table on sparse endgames (depth 4) | 10,260 → 8,476 nodes | HELPED |
+| History seeding | vs greedy 95% (95W 0D 5L) → 99% (99W 0D 1L); four of the five losses were perpetual_check | HELPED |
+| One extra ply | deeper score 1.00 / 0.96 / 0.81 | HELPED |
+| Richer evaluators vs material | 0.75 / 0.68 / 0.74 | HELPED |
 | Richer evaluators vs each other | 0.49 / 0.54 / 0.57, intervals include 0.5 | INCONCLUSIVE |
+| `full` evaluator cost | 2.31 → 62.29 µs per evaluation | HURT (cost) |
 | MCTS vs alpha-beta at 750 ms | alpha-beta won 100–0–0, score 1.00 | — |
 | `full` vs `material` at 750 ms | 0.54 [0.44–0.63] | INCONCLUSIVE |
 
 Source: `docs/experiment_log.md`, “Summary” table.
+
+On MVV-LVA: the Summary table's 70% baseline is the earlier prefer-checks variant (14W 1D 5L). The MVV-LVA entry says “among equal-value captures, prefer the cheapest attacker (most valuable victim / least valuable attacker); random among anything still tied.” It does not say the prefer-checks rule was still enabled, and the tie-break it describes is random, so the 70% → 95% step is not a clean single-variable comparison.
 
 ## 7. Limitations and honest caveats
 
 - **No external-engine cross-check or independent tests:** perft verifies move generation and a reference minimax verifies search, but no external engine was available, and the tests were written with the code.
 - **Small samples:** 10-game pilots and 100-game finals cannot resolve differences of a few percent.
 - **Shared deterministic openings:** fixed-depth games from one opening repeat, so game-level intervals understate uncertainty; clustered intervals are quoted too.
-- **Time-limited variance:** row B scored 0.15 in the pilot and 0.54 in the final run.
+- **Time-limited variance:** row B's two 10-game runs scored 0.15 and 0.55; the 100-game run scored 0.54 [0.44–0.63].
 - **Pure-Python speed and plain MCTS:** about depth 2–3 at 200 ms and 346 MCTS iterations at 750 ms, with no virtual loss or learned policy; MCTS loses 100–0 at equal time.
 - **Open equal-time evaluator question:** row B does not separate `full` from `material`; a larger run or equal-node comparison is needed.
 
@@ -217,5 +225,7 @@ Source: `docs/experiment_log.md`, “Summary” table.
 - **Rollout** — a random playout from a node to a terminal state or depth cap.
 - **UCT** — the tree policy balancing exploitation and exploration.
 - **Wilson interval** — a confidence interval for a proportion, robust with small samples.
-- **Score** — `(wins + 0.5·draws)/games`, with 0.5 even.
+- **Score** — `(wins + 0.5·draws)/games`; a score of 0.5 means an even match.
+- **Centipawn** — one hundredth of a soldier; the evaluation's unit.
+- **Zobrist hash** — a compact position fingerprint updated incrementally.
 - **Exploration constant** — the weight on UCT's exploration bonus.
