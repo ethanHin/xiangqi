@@ -65,6 +65,10 @@ are not comparable across machines; node counts and W/D/L are.
 | MCTS vs random (acceptance) | M5 | win rate, 100 games, 200 iterations | -- | 100% (100W 0D 0L) | INCONCLUSIVE |
 | MCTS iterations 100 -> 400 -> 1600 | M5 | win rate vs greedy, 10 games per arm | 10% | 70% | INCONCLUSIVE |
 | UCT exploration 0.7 -> 1.4 -> 2.0 | M5 | win rate vs greedy at 400 iterations | 80% (c=0.7) | 30% (c=2.0) | INCONCLUSIVE |
+| Depth+1 vs depth d (fixed depth) | M6 | score of the deeper side, 10 games per pairing | -- | 1.00 / 1.00 / 0.70 (d1v2 / d2v3 / d3v4) | HELPED |
+| Evaluator round-robin at depth 3 | M6 | score vs `material`, 10 games | -- | `material_pst` 0.70, `material_pst_mobility` 0.55, `full` 0.80 | INCONCLUSIVE |
+| MCTS vs alpha-beta at 750 ms | M6 | score of alpha-beta, 10 games | -- | 1.00 (10W 0D 0L) | HELPED |
+| `full` vs `material` at 750 ms | M6 | score of `full`, 10 games | -- | 0.55 (5W 1D 4L) | INCONCLUSIVE |
 
 ## Problem definition
 
@@ -81,22 +85,26 @@ Every fact is visible to both players: **perfect information**, no hidden state.
 
 **Actions.** One action is a legal move: a piece, a destination, and (implicitly)
 what it captures. The measured branching factor at the start position is **44 legal
-moves**. Across the 103 saved games in `games/` (16,179 positions, replayed by
-`python -m tools.branching_stats`) the average number of legal moves per position is
-**26.9** (median 30, min 1, max 81), falling as pieces come off:
+moves**. Across the **30 alpha-beta vs alpha-beta games** from the M6 depth-scaling
+run (`experiments/results/depth-scaling-20261123-050011`, replayed by
+`python -m tools.branching_stats`) there are **2,263 positions** with an average of
+**34.0 legal moves** (median 36, min 1, max 88), falling as pieces come off:
 
 | ply band | positions | avg legal moves |
 |---|---|---|
-| 0-19 | 2,027 | 34.57 |
-| 20-39 | 1,993 | 31.02 |
-| 40-59 | 1,960 | 27.53 |
-| 60+ | 10,199 | 24.42 |
+| 0-19 | 600 | 39.20 |
+| 20-39 | 578 | 36.77 |
+| 40-59 | 465 | 34.48 |
+| 60+ | 620 | 25.97 |
 
-**Caveat on that sample:** the 103 saved games are almost all greedy-vs-random, plus
-a random-vs-random sample and a scripted 8-ply game. Random play trades pieces
-differently from a searching player, so the 26.9 figure understates how wide a
-typical alpha-beta game is. It will be recomputed from alpha-beta vs alpha-beta
-games after M6, once those exist in quantity.
+Those 30 games averaged **75.4 plies** (median 66, min 31, max 294). This replaces
+the earlier sample, which was mostly greedy-vs-random: searching players keep more
+pieces on the board longer, so the average branching factor rose from 26.9 to 34.0
+and games shortened from 157 to 75 plies on average.
+
+The sample is still finite (30 games, fixed-depth 1-4 self-play), and the random
+opening plies are not counted because the tool starts from ``start_fen``. Treat the
+numbers as representative of this project's games, not of Xiangqi in general.
 
 **Transition model.** Deterministic and known: `board.make_move(move)` updates the
 position, the hash, and the move history; `unmake_move()` restores them exactly.
@@ -720,4 +728,121 @@ of 3,056,865, and with a fixed 200 ms budget it completes depth 2-3 per move, at
   spends visits on lines that have no time to become informative.
 - **Caveat:** 10 games. The default remains 1.4 as specified; changing it on this
   evidence would be tuning to noise, and M6 is where a real comparison belongs.
+- **Verdict:** INCONCLUSIVE.
+---
+
+## 2026-11-23 -- M6 depth scaling (fixed depth, full evaluator)
+
+- **Commit/tag:** `m6-experiments`.
+- **What changed:** nothing; this is the milestone's first experiment. Quick smoke:
+  both scripts were also run once with `--quick` (2 games, depth 1, 100/1000 ms caps)
+  to check the pipeline; those folders were deleted and are not results.
+- **Setup:** alpha-beta with the `full` evaluator at a fixed depth and
+  `time_limit_ms=None` on both sides (no clock at all), 10 games per pairing, colours
+  swapped, seed 1, 6-ply openings, **8 workers** on Windows 11 / CPython 3.15.0 /
+  16 logical CPUs. Command: `python -m experiments.depth_scaling --depths 1,2,3,4
+  --games 10 --workers 8`. Raw data:
+  `experiments/results/depth-scaling-20261123-050011/`.
+- **Result:** W/D/L from the deeper side's view, 95% Wilson interval, and per-side
+  averages:
+
+  | pairing | deeper W-D-L | score [interval] | deeper depth / nodes / ms | shallower depth / nodes / ms |
+  |---|---|---|---|---|
+  | 1 vs 2 | 10-0-0 | 1.00 [0.72-1.00] | 1.966 / 198 / 22.5 | 1.000 / 19 / 2.9 |
+  | 2 vs 3 | 10-0-0 | 1.00 [0.72-1.00] | 2.951 / 2,549 / 332 | 2.000 / 207 / 27.1 |
+  | 3 vs 4 | 6-2-2 | 0.70 [0.40-0.89] | 3.936 / 7,196 / 872 | 2.979 / 1,672 / 219 |
+
+  Nodes grow 19 -> 202 -> 2,251 -> 8,257 per move (x9 per ply) and time
+  2.9 -> 25 -> 301 -> 1,036 ms (x11). Cap hits: none (no cap). Every sub-depth value
+  reported by a side was a proven-mate early stop, so the depth assertion found zero
+  mismatches.
+- **Observation:** MEASURED: one extra ply wins every game up to 2v3, and still wins
+  0.70 in 3v4, while cost grows exponentially as expected. LIKELY: the smaller 3v4
+  margin is where the fixed-depth material search starts to see the same tactics at
+  both depths, so the extra ply buys less.
+- **Caveat:** 10 games per pairing (30 games total). The intervals are wide; the
+  monotonically decreasing effect is the interesting part, not the exact scores.
+- **Verdict:** HELPED.
+
+---
+
+## 2026-11-23 -- M6 heuristic comparison (four evaluators round-robin)
+
+- **Commit/tag:** `m6-experiments` (measurement only; no parameter was changed).
+- **What changed:** nothing. This measures the M4 evaluators under equal depth.
+- **Setup:** alpha-beta at fixed depth 3 with each evaluator, full round-robin (six
+  pairings), colours swapped, 10 games per pairing, seed 1, 6-ply openings, a 5,000 ms
+  safety cap per move, **8 workers**, Windows 11 / CPython 3.15.0 / 16 logical CPUs.
+  Command: `python -m experiments.heuristic_comparison --games 10 --workers 8`
+  (round-robin rows of that run). Raw data:
+  `experiments/results/heuristic-comparison-20261123-051132/`.
+- **Result:** score of the row evaluator against the column one (10 games each):
+
+  |  | material | material_pst | material_pst_mobility | full |
+  |---|---|---|---|---|
+  | material | -- | 0.30 (2-2-6) | 0.45 (4-1-5) | 0.20 (1-2-7) |
+  | material_pst | 0.70 (6-2-2) | -- | 0.55 (5-1-4) | 0.80 (8-0-2) |
+  | material_pst_mobility | 0.55 (5-1-4) | 0.45 (4-1-5) | -- | 0.70 (7-0-3) |
+  | full | 0.80 (7-2-1) | 0.20 (2-0-8) | 0.30 (3-0-7) | -- |
+
+  Cap hits: **0 of 2,880 moves** (no move came near the 5 s safety cap). Average depth
+  reached per side: 2.97-2.99 at every cell (the shortfalls are proven-mate early
+  stops). Per-move cost at depth 3: material 88 ms, PST 106-145 ms, PST+mobility
+  161-218 ms, `full` 220-262 ms.
+- **Observation:** MEASURED: `full` beats material (0.80) but loses to `material_pst`
+  (0.20) and to `material_pst_mobility` (0.30), while PST beats material (0.70). The
+  matrix is intransitive again, exactly as in the M4 smoke checks. LIKELY: mobility
+  double-counts material (more pieces move more), and king safety's flat guard bonuses
+  can reward passivity, so `full` does not dominate even though each feature looks
+  reasonable alone.
+- **Caveat:** 10 games per cell; intervals are wide (e.g. 0.80 is [0.49-0.94] and
+  0.20 is [0.06-0.51]). This is not a ranking; it is a signal that the evaluator
+  needs a larger run before any claim.
+- **Verdict:** INCONCLUSIVE.
+
+---
+
+## 2026-11-23 -- M6 row A: MCTS vs alpha-beta at equal time
+
+- **Commit/tag:** `m6-experiments`.
+- **What changed:** nothing. MCTS keeps its pre-set default exploration of 1.4; the
+  M5 10-game sweep favoured 0.7 at 400 iterations, but that was not adopted (10 games
+  cannot support a change), and `--mcts-exploration 0.7` reruns this row with the
+  lower constant.
+- **Setup:** 750 ms per move for both sides, 10 games, colours swapped, seed 1,
+  6-ply openings, **8 workers**. Alpha-beta uses iterative deepening with `full`;
+  MCTS uses `full` with `time_limit_ms=750` and a 1,000,000 iteration cap so time
+  decides. Command: `python -m experiments.heuristic_comparison --games 10 --workers
+  8` (row A of that run).
+- **Result:** alpha-beta **10W 0D 0L (1.00, [0.72-1.00])**. Alpha-beta: depth 3.28
+  per move, 6,252 nodes, 701 ms. MCTS: most-visited-line depth **1.24**, 367
+  iterations, 766 ms.
+- **Observation:** MEASURED: at equal time the depth-bounded search wins every game.
+  MCTS spends its 750 ms on ~370 random rollouts and builds a tree only ~1.2 plies
+  deep, while alpha-beta reaches 3+ plies of an ordered tree, which is the whole
+  difference between the two methods on this budget.
+- **Caveat:** 10 games; 750 ms is a small MCTS budget (the M5 scaling sweep needed
+  ~1600 iterations, roughly 3 s per move, to beat greedy). MCTS depth is its
+  most-visited line, not a search depth.
+- **Verdict:** HELPED (for alpha-beta).
+
+---
+
+## 2026-11-23 -- M6 row B: `full` vs `material` at equal time
+
+- **Commit/tag:** `m6-experiments`.
+- **What changed:** nothing; the evaluator defaults are untouched.
+- **Setup:** both sides alpha-beta with iterative deepening at 750 ms per move,
+  `full` vs `material`, 10 games, colours swapped, seed 1, 6-ply openings,
+  **8 workers**.
+- **Result:** `full` **5W 1D 4L (score 0.55, [0.27-0.80])**. `full` reached depth
+  4.31 per move with 8,027 nodes at 746 ms; `material` reached depth **4.81** with
+  12,457 nodes at 740 ms -- half a ply deeper for the same time.
+- **Observation:** MEASURED: the richer evaluator searches visibly shallower at equal
+  time, and this sample gives it only a 0.55 score. An earlier 10-game run of the same
+  row gave 0.15, so the estimate swings wildly at this sample size. LIKELY: at 750 ms
+  the extra 60 us per evaluation costs about half a ply, and a half ply is worth more
+  than the positional terms at this level.
+- **Caveat:** 10 games, and the two runs disagreed (0.15 vs 0.55); this row proves
+  nothing yet. A `--games 50` run is the next step if the question matters.
 - **Verdict:** INCONCLUSIVE.

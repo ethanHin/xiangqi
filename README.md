@@ -5,8 +5,8 @@ experiment suite, and a local web app for human-vs-bot and bot-vs-bot play with
 replay.
 
 **Status: M1 (engine core), M2 (baselines and match harness), M3 (alpha-beta), M4
-(evaluation) and M5 (plain MCTS) complete.** Later milestones (experiments, server,
-web UI) are described in `AGENTS.md`.
+(evaluation), M5 (plain MCTS) and M6 (experiments) complete.** M7 and M8 (replay
+viewer, live play server and web UI) are described in `AGENTS.md`.
 
 ## Quick start
 
@@ -28,7 +28,7 @@ second. `ruff check .` and `ruff format .` keep the code tidy.
 ## Layout
 
 ```
-engine/            # the project's bottom layer, no dependencies above it
+engine/               # the project's bottom layer, no dependencies above it
   types.py         # colors, piece codes, squares, Move, Result, history records
   zobrist.py       # incremental hashing keys (fixed seed, reproducible)
   board.py         # board state, FEN, make_move/unmake_move, attack detection
@@ -54,6 +54,16 @@ tools/             # developer scripts
   make_positions.py  # regenerate the fixed test position sets
   make_samples.py    # regenerate games/samples
   search_stats.py    # node-count table for each M3 enhancement
+  eval_cost.py       # evaluation cost and search speed per evaluator
+  clamp_stats.py     # how often the positional clamps fire
+  branching_stats.py # branching factor / game length from saved games
+  mcts_sweep.py      # MCTS iteration and exploration sweeps
+experiments/       # M6 experiments and their committed evidence
+  depth_scaling.py
+  heuristic_comparison.py
+  common.py          # flags, streaming CSV, Wilson interval, plots
+  README.md          # commands, timings, CSV column guide
+  results/           # CSVs, PNGs and (gitignored) per-game JSON
 tests/             # pytest suite, including the fixed position sets
   positions_middlegame.txt
   positions_transpositions.txt
@@ -484,6 +494,28 @@ interesting part: at 100 iterations MCTS loses badly to a one-ply greedy bot, an
 signal. Ten games per arm cannot rank the settings, the defaults were chosen by
 reasoning, and M6 is where MCTS gets a real comparison.
 
+## Experiments (M6)
+
+Two scripts under `experiments/`, both driving the stock harness and writing their
+evidence (per-game CSV, summary CSV with Wilson intervals, PNG plots, and per-game
+JSON) into `experiments/results/<run-id>/`. `experiments/README.md` has the exact
+commands, the flag reference, the CSV column guide, and measured run times.
+
+| experiment | what it varies | default run (10 games per pairing) |
+|---|---|---|
+| `depth_scaling` | alpha-beta depth d vs d+1, fixed depth, `full` evaluator | deeper side scores 1.00 in 1v2 and 2v3, 0.70 [0.40-0.89] in 3v4 |
+| `heuristic_comparison` | the four evaluators round-robin at depth 3, plus MCTS-vs-alpha-beta and full-vs-material at 750 ms | `full` beats material (0.80) but loses to `material_pst` (0.20); alpha-beta beats MCTS 10-0 at equal time |
+
+```bash
+python -m experiments.depth_scaling --depths 1,2,3,4 --games 10 --workers 8
+python -m experiments.heuristic_comparison --games 10 --workers 8
+```
+
+Node counts grow about ninefold per ply (19 / 202 / 2,251 / 8,257 at depths 1-4) and
+per-move time about elevenfold (2.9 / 25 / 301 / 1,036 ms). Ten games gives wide
+intervals; `--games 50` and `--games 100` are supported and roughly linear in time
+(see the estimates in `experiments/README.md`).
+
 ## Tournament harness
 
 ```bash
@@ -546,7 +578,7 @@ become a cannon's screen), which is what took depth 4 from 23 s in M1 to 5 s.
 - ~~M3 alpha-beta~~ (done)
 - ~~M4 evaluation (material, piece-square tables, mobility, king safety)~~ (done)
 - ~~M5 plain MCTS~~ (done)
-- M6 experiments (depth scaling, heuristic comparison)
+- ~~M6 experiments (depth scaling, heuristic comparison)~~ (done)
 - M7 replay viewer
 - M8 live play server and web UI
 

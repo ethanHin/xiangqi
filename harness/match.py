@@ -114,7 +114,9 @@ class MatchJob:
     seed: int
     game_id: str
     opening_plies: int = DEFAULT_OPENING_PLIES
-    move_time_limit_ms: float = DEFAULT_MOVE_TIME_LIMIT_MS
+    # None means "no per-move time limit": fixed-depth bots then run without a
+    # deadline at all, which is what the M6 depth-scaling experiment needs.
+    move_time_limit_ms: float | None = DEFAULT_MOVE_TIME_LIMIT_MS
     start_fen: str | None = None
 
 

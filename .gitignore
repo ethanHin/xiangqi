@@ -8,8 +8,8 @@ __pycache__/
 .venv/
 venv/
 
-# Generated experiment data (CSV and plots are reproducible from the scripts)
-experiments/results/
+# Experiment evidence (CSVs, plots) is committed; the per-game JSON dumps are not.
+experiments/results/*/games/
 
 # Saved games are runtime data; sample games are kept
 games/*.json
